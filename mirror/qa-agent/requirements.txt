@@ -7,8 +7,9 @@
 #   - This file is a FROZEN SNAPSHOT (`pip freeze`) of a working
 #     deployment, not a minimal dependency list: it also carries
 #     transitive pins of Agno / FastAPI / MCP and Linux-only wheels
-#     (e.g. uvloop). pyproject.toml is the source of truth for the
-#     direct dependency ranges.
+#     (e.g. uvloop, which carries a `sys_platform != "win32"` marker so
+#     the same file also installs on Windows / macOS). pyproject.toml is
+#     the source of truth for the direct dependency ranges.
 #   - qa-agent itself is installed in editable mode (`pip install -e .`)
 #     so pyproject.toml remains the source of truth for metadata.
 #   - PyInstaller frozen builds bundle these via collect_all; this file is
@@ -147,7 +148,7 @@ typing-inspection==0.4.2
 uncalled-for==0.3.2
 urllib3==2.7.0
 uvicorn==0.51.0
-uvloop==0.22.1
+uvloop==0.22.1; sys_platform != "win32"
 watchfiles==1.2.0
 websockets==16.1.1
 wrapt==2.2.2

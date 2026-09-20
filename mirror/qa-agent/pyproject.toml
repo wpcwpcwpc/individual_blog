@@ -18,6 +18,9 @@ dependencies = [
     "openai>=1.30.0",
     "pymilvus>=2.4.0",
     "fastapi>=0.115.0",
+    # Starlette's SessionMiddleware (api/server.py) signs the login cookie with
+    # itsdangerous, and starlette does not pull it in on its own.
+    "itsdangerous>=2.1",
     "uvicorn[standard]>=0.30.0",
     "websockets>=13.0",
     "pydantic>=2.7.0",
@@ -32,8 +35,13 @@ dependencies = [
     "python-dotenv>=1.0.0",
     # MongoDB: Agno's MongoDb adapter + Beanie require the sync/async pair
     # below. motor 3.x is the asyncio driver; beanie pins its own motor range.
+    # Upper bound on beanie is load-bearing: beanie 2.x calls
+    # `client.append_metadata(...)`, which AsyncIOMotorClient does not have, so
+    # db/mongo.py::init_db fails with "MotorDatabase object is not callable"
+    # and — because that call site swallows exceptions — silently degrades to
+    # "MongoDB unavailable" instead of failing loudly.
     "motor>=3.5",
-    "beanie>=1.26.0",
+    "beanie>=1.30.0,<2.0.0",
     "pymongo>=4.6",
     # Tracing (OpenTelemetry)
     "opentelemetry-api>=1.20",
@@ -73,10 +81,18 @@ postgres = [
 
 # This repository is an application, not an installable library. Modules are
 # imported from the project root (`python main.py` / `python -m uvicorn
-# main:app`), so no top-level package is declared and a non-editable
-# `pip install .` has nothing to install — it is not a supported install path.
-# Setup: `.venv` + `pip install -r requirements.txt` (or `pip install -e .`
-# for the dependency ranges alone) and run from the project root.
+# main:app`), so no top-level package is declared: `pip install .` installs the
+# dependencies but no code, and running the app is always done from the project
+# root.
+#
+# `packages = []` is required, not cosmetic: with ten top-level directories
+# (api/, core/, tools/, …) setuptools' flat-layout auto-discovery aborts with
+# "Multiple top-level packages discovered in a flat-layout". An empty list keeps
+# `pip install -e .` (used by deploy.sh, for the dependency ranges) working,
+# without pushing generic top-level names like `core` or `api` into
+# site-packages.
+[tool.setuptools]
+packages = []
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

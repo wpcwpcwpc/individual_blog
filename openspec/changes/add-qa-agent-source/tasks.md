@@ -523,6 +523,29 @@
 ## 8. 本地可运行验证
 
 - [ ] 8.1 后端：依赖可安装、服务可启动、健康检查正常
+  - **进行中（作者要求先跑可用性；经同意 8.1 前置到 7.9 之前——README 要写经实测的安装/启动步骤，先跑通再落文档）**：
+    - **环境**：本机 pyenv 有 3.11.9（全局 3.14.5 与 pin 不兼容）→ 镜像内建 `.venv`（用绝对路径的 3.11.9 解释器，**不落 `.python-version`**）
+    - **安装路径修正**：`requirements.txt` 是 Linux venv 快照，Windows 下 `uvloop==0.22.1` **构建即失败**（`RuntimeError: uvloop does not support Windows at the moment`）→ 本地改用 `pip install -e .`（pyproject 是直接依赖的真源）
+    - **一次真实停顿**：首次后台 `pip install` 只装了一半（venv 仅 71 包、无 `fastapi`）→ 改前台重跑后成功；教训：镜像区长命令用前台，或装完必须 `pip list` 复核
+  - **本轮发现 3 条依赖缺陷（作者拍板「全修」）**：
+    - **D1 `pyproject.toml` 缺 `itsdangerous`**：`SessionMiddleware`（`api/server.py:379`）用其签名 cookie，starlette 不自动拉；Linux 的 freeze 里有它，把缺口掩盖了 → 全新环境按 pyproject 装完 `import api.server` 直接 `No module named 'itsdangerous'`。**全镜像逐文件导入扫描（127 文件，收集 ModuleNotFoundError）结果为「仅此一个缺包」**，其余全部导入成功
+    - **D2 `beanie>=1.26.0` 无上界**：解析到 beanie 2.2.0 + motor 3.7.1，`init_beanie` 抛 `TypeError: MotorDatabase object is not callable … append_metadata`；又被 `db/mongo.py:69` 的 `except Exception` 吞成「⚠ MongoDB unavailable」→ 表面症状是「用户会话映射静默失效」。回到 freeze 的 beanie 1.30.0 + motor 3.5.3 后**实测恢复**（`init_db()` 成功、`QaPhaseCheckpoint.get_settings()` 正常、内网 Mongo 可见 34 个集合含 `user_sessions`）
+    - **D3 `uvloop==0.22.1` 平台性**：加 `; sys_platform != "win32"` 标记（表头同步注明），使同一份 freeze 在 Windows/macOS 也能装
+  - **我引入的回归（同一轮修掉）**：7.8 删 `[tool.setuptools.packages.find]` 后，setuptools flat-layout 自动发现撞上十个顶层目录 → `Multiple top-level packages discovered in a flat-layout: ['db','api','auth','core','hooks','agents','memory','skills','coordinator','mcp_service']`，**`pip install -e .` 直接失败**（而 `deploy.sh install` 正是这条路径，Linux 也会中）→ 补 `[tool.setuptools] packages = []` 并写明「必须显式空列表」，`--dry-run` 验证恢复（`Would install qa-agent-0.1.0`）
+  - **本地运行配置（全部落在被忽略的本地文件里，零代码改动）**：
+    - 端口冲突实测：**8000 被作者的内网实例占用**（`python.exe` PID 14496，~400MB，`LLM_BASE_URL=aigw.netease.com`、`version 1.2.23`、登录页为「网易内部认证系统-OpenID」——**首次探测的 200 响应其实来自它，不是镜像版**）；**5173 被内网 UI 占用**（`E:\h73_etool\qa-agent-ui` 的 `vite.js`，PID 47712）
+    - **动态端口方案被否（有硬约束）**：OAuth `redirect_uri` 必须在 provider 侧**预先注册且精确匹配**（GitHub 只允许查询串变化、不接受任意端口），且 `auth/router.py` 的 `redirect_uri` 是按每次请求的 base_url 现算（`:118` authorize 与 `:142` token 两处必须一致）→ 动态端口会直接断登录。可行解是**可配置端口**
+    - 采纳：镜像版后端 **8010**、镜像版前端 **5172**；`mirror/qa-agent/.env` 改 `API_PORT=8000→8010` 并新增 `FRONTEND_URL=http://localhost:5172/`（该值会被并入 CORS 白名单，`api/server.py:390-402`）；新建 `mirror/qa-agent-ui/.env.local` = `VITE_API_BASE_URL=http://localhost:8010/api`（`*.local` 已被 UI 的 `.gitignore` 忽略，不入库）
+    - **零代码改动的依据（三条均已核实）**：① 前端 fetch 与 WebSocket 都从 `VITE_API_BASE_URL` 派生（`api/sessions.ts:59-72` 的 `getWSStreamUrl`，含 http→ws 转换，测试已覆盖）；② 后端**没有任何 WS origin 校验**（全镜像仅 `api/server.py:2352` 一处 WS 路由）；③ CORS 已放行 5173 且 `allow_credentials=True`，5172 通过 `FRONTEND_URL` 自动纳入
+  - **实机验证（镜像版 8010 / 前端 5172，全部通过）**：
+    - `/api/health` → `{"status":"ok","milvus":"disabled","storage":"ok","version":"0.1.0"}` —— `version=0.1.0` 证明是镜像版（对比内网版 `1.2.23`），`storage:"ok"` 证明 beanie 修复在应用内生效
+    - 启动日志：`✓ MongoDB / Beanie initialized`（**不再出现 D2 的静默降级**）· `✓ Registered 15 builtin tools` · `Registered 2 builtin agents` · `Milvus disabled — KnowledgeHub not initialized`（预期）· `MCP: no servers configured`（预期）· `Loaded 0 skills` + `⚠ No skills loaded`（沙化后确实无内置 skill，属预期）· `✓ QA Agent System ready (startup=1.08s)`
+    - `/api/config` → 全镜像化值（`deepseek-flash` / `https://api.deepseek.com` / `mcp_config_path=""`）
+    - `/api/auth/get_login_user` → `code:300` + `redirect_url=…/login_required?origin_url=http://localhost:5172/`（`FRONTEND_URL` 兜底链路正确）
+    - `/api/auth/login_required` → **503** + 精确缺键清单（`OAUTH_AUTHORIZE_URL`/`OAUTH_TOKEN_URL`/`OAUTH_USERINFO_URL`/`OAUTH_CLIENT_ID`）→ 7.7 新流程在实机确认
+    - 前端 `http://localhost:5172/` → HTTP 200、含 `id="root"`；Vite 启动仅一条 `__dirname` 的未来兼容告警
+  - **待办（阻塞真实登录链路）**：作者注册公开 OAuth 应用（GitHub 最快）→ 回调地址必须精确填 `http://localhost:8010/api/auth/login_callback`（端口随 `API_PORT` 变）；拿到 client id/secret 后写入 `.env`（`OAUTH_PKCE_ENABLED=false`、`OAUTH_SCOPE=read:user user:email`）并重启后端，再跑「登录 → 对话 → 流式 → 审核」链路。**界面务必开 `http://localhost:5172`**（用 `127.0.0.1` 会因 host-only cookie 的 host 不一致而「登录成功但仍未登录」）
+  - **记账**：`db/mongo.py:69` 的 `except Exception` 把「依赖不匹配」这类硬错误也吞成「MongoDB unavailable」→ 与 8.x 已挂的 `get_or_register_user` 静默降级同源，建议合并评估「依赖不匹配是否应 fail loud」（D15 的思路）· 前端 `<title>qa-agent-ui</title>` 是占位 → 9.x 打磨项 · `vite.config.ts` 的 `__dirname` 与 `proxy target` 硬编码 8000（本次靠 `.env.local` 绕开，未改代码）→ 是否给 proxy 加可配项留待 9.x 判
   - **4.6 挂账（既有缺陷，非本轮引入）**：`api/startup_recovery.py:recover_orphan_sessions()` 全镜像零调用方 → 崩溃会话抢救链（`run_status == "running"` 检测 → `session_events` 聚合 → `$push` 回 `agno_sessions` → 翻 `interrupted` + 推系统通知）实际未生效。作者拍板保留该模块但不接回 lifespan，故启动验证时不要因「无 Recovery 日志」判为回归；原入口疑与 4.4 记录的「`deploy.sh` 引用的 `startup_probe` 模块在镜像内不存在」同源
   - **7.8 挂账（只能实跑判定）**：① compose 的 `minio` 用旧键名 `MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY`，新版 minio 镜像要求 `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`，且 healthcheck 用 `curl`——而 `milvus-standalone` 对 `etcd`/`minio` 是普通 `depends_on`、qa-agent 对 `milvus-standalone` 是 `service_healthy` → minio 起不来会让整套 compose 卡住；② `requirements.txt` 补了 `psycopg[binary]` 后 `agno.db.postgres.PostgresDb` 能否实连（7.8 只核了 PyPI 元数据里的 extra 名，未实连）；③ 默认 `STORAGE_BACKEND=mongo` 而环境无 MongoDB 时的实际行为（`core/storage.py` 只在 `ImportError` 时降级 SQLite，连不上 Mongo 是否降级需实测）；④ `deploy.sh` 的 `kill_port_processes` 会 `kill -9` 占用端口的任意进程；⑤ `deploy.sh check` 的 `mongosh` 提示、`DATA`/日志卷属主是否真可写
 - [ ] 8.2 前端：依赖可安装、界面可访问、与本地后端连通
