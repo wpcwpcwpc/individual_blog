@@ -544,7 +544,15 @@
     - `/api/auth/get_login_user` → `code:300` + `redirect_url=…/login_required?origin_url=http://localhost:5172/`（`FRONTEND_URL` 兜底链路正确）
     - `/api/auth/login_required` → **503** + 精确缺键清单（`OAUTH_AUTHORIZE_URL`/`OAUTH_TOKEN_URL`/`OAUTH_USERINFO_URL`/`OAUTH_CLIENT_ID`）→ 7.7 新流程在实机确认
     - 前端 `http://localhost:5172/` → HTTP 200、含 `id="root"`；Vite 启动仅一条 `__dirname` 的未来兼容告警
-  - **待办（阻塞真实登录链路）**：作者注册公开 OAuth 应用（GitHub 最快）→ 回调地址必须精确填 `http://localhost:8010/api/auth/login_callback`（端口随 `API_PORT` 变）；拿到 client id/secret 后写入 `.env`（`OAUTH_PKCE_ENABLED=false`、`OAUTH_SCOPE=read:user user:email`）并重启后端，再跑「登录 → 对话 → 流式 → 审核」链路。**界面务必开 `http://localhost:5172`**（用 `127.0.0.1` 会因 host-only cookie 的 host 不一致而「登录成功但仍未登录」）
+  - **OAuth 应用接入（作者拍板「去注册一个公开 OAuth 应用」→ 选用 GitHub OAuth App）**：
+    - 凭据已写入 `mirror/qa-agent/.env`（**gitignored，未入库**）：`OAUTH_AUTHORIZE_URL=https://github.com/login/oauth/authorize` · `OAUTH_TOKEN_URL=https://github.com/login/oauth/access_token` · `OAUTH_USERINFO_URL=https://api.github.com/user` · `OAUTH_SCOPE=read:user user:email` · `OAUTH_PKCE_ENABLED=false`（依据 `core/config.py:433-439` 自述「GitHub OAuth apps 不支持 PKCE」）· `OAUTH_CLIENT_ID` / `OAUTH_CLIENT_SECRET`
+    - 重启后端（`main.py:80` 的 `load_dotenv(..., override=True)` 只在启动时读一次 → 改 `.env` 必须重启）后实测 `%TEMP%\qa_login_probe.py`（**4/4 PASS**）：`/api/auth/login_required` → **302**，`location` 命中 `github.com/login/oauth/authorize?…client_id=<已配置>&redirect_uri=http%3A%2F%2Flocalhost%3A8010%2Fapi%2Fauth%2Flogin_callback&state=…`（**不再是 503**）· 响应带 `session=` Set-Cookie（state 已落会话）· `/api/auth/get_login_user` 匿名态 → `code:300` + `redirect_url` 正确 · `/api/auth/login_callback?code=dummy&state=bogus` → **400 `OAuth state mismatch`**（state 防 CSRF 生效）
+    - **实测拦截（配置侧，非代码缺陷）**：用真实 id/secret + 伪造 code 直打 GitHub token 端点（`%TEMP%\qa_oauth_chain_probe.py`）→ `{"error":"redirect_uri_mismatch","error_description":"The redirect_uri MUST match the registered callback URL for this application."}`。**该响应同时证明 client_id/secret 合法**（错误凭据会回 `incorrect_client_credentials`），卡点仅剩 App 内登记的 Authorization callback URL 不等于 `http://localhost:8010/api/auth/login_callback` → 作者拍板「我去改成 http://localhost:8010/api/auth/login_callback」（GitHub 支持多行回调，可新增而不删原有）
+    - **链路待跑**：作者改完回调后重跑探测，再由作者在浏览器完成「登录 → 对话 → 流式 → 审核」。**界面务必开 `http://localhost:5172`**（用 `127.0.0.1` 会因 host-only cookie 的 host 不一致而「登录成功但仍未登录」）
+    - **回调修好后复测**：`redirect_uri_mismatch` 消失，GitHub 回 `{"error":"bad_verification_code"}` → **client_id / secret / redirect_uri 三项全部通过校验**，服务端链路无残留缺口（Homepage URL 只是展示字段，不参与鉴权，作者未填不影响登录）
+    - **登录后链路实测 PASS（`%TEMP%\qa_e2e_probe.py`，用部署自身的 `SESSION_SECRET_KEY` 签 `SessionMiddleware` cookie，绕开必须走浏览器的 provider 段）**：`POST /api/sessions` → 200（非 401 → cookie 被 `get_current_user` 接受）→ 新建 `2f856008-…` → `POST /sessions/{id}/messages` 返回 `accepted` → WS `/sessions/{id}/stream/ws` 事件序列 `user_message → run_started → PreHookStarted/Completed ×2 → ModelRequestStarted → reasoning_delta ×95 → token ×2 → ModelRequestCompleted → RunContentCompleted → PostHookStarted/Completed → MemoryUpdateStarted/Completed → run_complete`，**流式文本 = `PONG`**（真实 LLM 调用，非 mock）→ `/sessions/{id}/status` = `completed`、`error:null`。**8.3 的服务端面据此判为已通**
+    - **新发现（记账，不阻断）**：`get_login_user` 对「cookie 有效但邮箱不在 `agent_users`」返回 `code:300 请先登录`（`auth/service.py:15-29` 查不到即 None），而 `get_current_user`（`auth/dependencies.py:28`）只看 cookie 里的 email → **陈旧/已注销用户的 cookie 在 UI 侧显示未登录、API 侧仍被授权**。用户被删除后的残留会话属边界场景，归入 9.x 安全打磨（与 7.7 的「`_safe_next_url` 未做 origin 白名单」同类）
+  - **本轮新增记账（8.1 现场）**：① `.claude/skills/` 仅剩 `.gitkeep`、`.claude/agents/` 不存在 → 启动日志 `Loaded 0 skills` + `⚠ No skills loaded — check PROJECT_SKILLS_DIR=.claude/skills` 是 4.6 沙化的**预期空态、不是缺陷**，但全新克隆者会据此误判 → 归入 7.9 README 的「验收范围 / 已知空态」一节；且 7.8 新挂的 compose 卷 `./.claude/agents` 在源目录缺失时由 Docker 自动建空目录，README 需一并说明（或在镜像内补 `.gitkeep`）。② 作者 `.env` 的 `MONGO_URI` 仍指向内网 `7.25.185.247:30020`（本地文件、未入库）→ `/api/health` 的 `storage:"ok"` 实际由内网 Mongo 提供；`.env.example` 已复核为**零内网地址**（D14 守住）
   - **记账**：`db/mongo.py:69` 的 `except Exception` 把「依赖不匹配」这类硬错误也吞成「MongoDB unavailable」→ 与 8.x 已挂的 `get_or_register_user` 静默降级同源，建议合并评估「依赖不匹配是否应 fail loud」（D15 的思路）· 前端 `<title>qa-agent-ui</title>` 是占位 → 9.x 打磨项 · `vite.config.ts` 的 `__dirname` 与 `proxy target` 硬编码 8000（本次靠 `.env.local` 绕开，未改代码）→ 是否给 proxy 加可配项留待 9.x 判
   - **4.6 挂账（既有缺陷，非本轮引入）**：`api/startup_recovery.py:recover_orphan_sessions()` 全镜像零调用方 → 崩溃会话抢救链（`run_status == "running"` 检测 → `session_events` 聚合 → `$push` 回 `agno_sessions` → 翻 `interrupted` + 推系统通知）实际未生效。作者拍板保留该模块但不接回 lifespan，故启动验证时不要因「无 Recovery 日志」判为回归；原入口疑与 4.4 记录的「`deploy.sh` 引用的 `startup_probe` 模块在镜像内不存在」同源
   - **7.8 挂账（只能实跑判定）**：① compose 的 `minio` 用旧键名 `MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY`，新版 minio 镜像要求 `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`，且 healthcheck 用 `curl`——而 `milvus-standalone` 对 `etcd`/`minio` 是普通 `depends_on`、qa-agent 对 `milvus-standalone` 是 `service_healthy` → minio 起不来会让整套 compose 卡住；② `requirements.txt` 补了 `psycopg[binary]` 后 `agno.db.postgres.PostgresDb` 能否实连（7.8 只核了 PyPI 元数据里的 extra 名，未实连）；③ 默认 `STORAGE_BACKEND=mongo` 而环境无 MongoDB 时的实际行为（`core/storage.py` 只在 `ImportError` 时降级 SQLite，连不上 Mongo 是否降级需实测）；④ `deploy.sh` 的 `kill_port_processes` 会 `kill -9` 占用端口的任意进程；⑤ `deploy.sh check` 的 `mongosh` 提示、`DATA`/日志卷属主是否真可写
@@ -567,10 +575,24 @@
 ## 10. 揭幕与发布
 
 - [ ] 10.1 揭幕：移除 `.gitignore` 中的 `mirror/` 条目
+  - **10.1 已被作者改案取代（9/20 拍板）**：原案「在 personal-site 内揭幕 mirror/ 并单次提交入库」作废。作者决策：**为镜像区单独建一个 Git 仓库，先设 private，通过发布闸门后再转 public**，且**把 `mirror/` 从 personal-site 物理移出，新库作为唯一真源**（原话：「我想单独给mirro的项目设置一个git库」「现在建独立库，先设 private（推荐）」「A 移出，新库成唯一真源（推荐）」）
+  - 已执行：`robocopy mirror C:\Users\wenpengceng\qa-agent /E /MOVE` → **移动前后清单 sha256 一致**（`47243` 文件 / `798957021` 字节 / `091604a586517fc56ec8da5844a005dcf3441a17210020a6efc71480973c141e`，用 `%TEMP%\qa_manifest.py` 逐文件 (相对路径, 大小) 摘要核验，防「静默截断」类事故）；新库 `git init -b main` 首提交 `519d18b`，入库 **284** 文件，`git ls-files` 复核**零泄漏**（无 `.env` / `.venv` / `node_modules` / `__pycache__` / `dist` / `*.log`，只留两个 `.env.example`）
+  - personal-site 侧：`mirror/` 条目恢复为忽略（防游离副本误入库）并注明去向；`mirror/` 全部文件从本站仓库删除
+  - **本台账仍在 personal-site**，其 `mirror/…` 的 `file:line` 证据自此指向另一个仓库，属**已接受的跨库引用代价**；后续镜像区任务在新库就地执行，本文件的记录只作历史追溯
 - [ ] 10.2 单次提交入库（含镜像区与本次文档变更）
+  - **改案**：personal-site 侧只剩「删除 mirror/ + 文档与台账更新」一次提交；镜像区自身的历史在新库，**与本站仓库历史解耦**（顺带规避了源仓库痕迹被带出的风险）
 - [ ] 10.3 线上核对：镜像区不上站、站点与 deck 正常、链接健康检查通过
 - [ ] 10.4 阶段验收：镜像区 README 形态声明与台账准确，站点侧无镜像区内容
 - [ ] 10.5 公开侧登记完成状态（泛化表述）
+- [ ] 10.6 公网演示部署（9/20 作者新增诉求 + 拍板）
+  - 作者诉求原话：「像博客一样，让该服务运行在公网上，是不是可以前端复刻blog的 github公网自动化部署，然后服务端运行在本地电脑，然后把本地电脑的ip+端口给前端修改即可」
+  - 评估结论（三条硬约束，均已核实）：① **混合内容** —— GitHub Pages 是 HTTPS，页面内 `fetch http://…:8010` 与 `ws://` 会被浏览器直接拦；② **私网不可达** —— `192.168./10.` 地址在公网浏览器无路由，"本地 IP 给前端"只在同局域网成立；③ **跨站 cookie** —— session cookie 为 host-only + `SameSite=Lax`（`api/server.py:379-384`，`https_only=False` 硬编码），第三方站点发起的 XHR 不回传 → 登录跳转看似成功而后续 API 全 300/401；要走「前端 Pages + 后端本地」必须改 cookie 代码
+  - **作者拍板：「A 同源单进程 + 隧道（推荐）」**——UI 构建产物放入后端内嵌 SPA 目录（`api/server.py:2720-2734` 已有 `web/` 静态挂载 + 404 fallback），`FRONTEND_URL=/` 使 API / 界面 / cookie / WS 全同源，TLS 由隧道终结 → `wss://` 自动成立，**零代码改动**
+  - 待办：① `qa-agent-ui` 构建 → 产物落到 `qa-agent/web/`；② `.env` 设 `FRONTEND_URL=/`（或隧道域名，二选一并说明取舍）；③ 隧道选型需**稳定域名**（quick tunnel 每次换域 → 每次都要改 GitHub OAuth 回调）：优先 `cloudflared` 具名隧道或 `ngrok` 固定域；④ **OAuth 回调改写为隧道域名**，并确认隧道透传 `Host` / `X-Forwarded-Proto`，否则 `auth/router.py:82` 按 `request.base_url` 现算出的 `http://…` 会与登记的 `https://…` 不匹配；⑤ 隧道暴露后重新核 7.7 的 state/PKCE 与 D12「cookie 只放本系统用户标识」
+  - 与 11.2 的关系：本项仅为**公网演示**（单实例、单用户、本地机器），不改变 11.2「生产可用性（部署、并发、监控、安全加固）明确排除」的结论
+- [ ] 10.7 独立库发布闸门（新库转 public 前强制）
+  - 9.1–9.3 的扫描对象由「personal-site 内的镜像区」改为**新库工作树**；9.5 相应变为「新库未被站点引用」
+  - 7.9（README 启动说明）/ 7.10（替换产物自查）在新库完成后，才允许 git 仓库可见性由 private 转 public
 
 ## 11. 非目标（本变更不做）
 

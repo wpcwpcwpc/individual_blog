@@ -24,11 +24,10 @@ GLOSSARY.local.md
 # 模板与用法见 openspec/changes/add-qa-agent-source/design.md D6
 SANITIZE-LIST.local.md
 
-# 源码镜像区（mirror/）：D4 的揭幕动作（删除 mirror/ 忽略条目）已提前执行——
-# 作者要求给改造中的镜像区加版本控制兜底（此前 `edit` 曾把一个文件写坏且无回滚）。
-# 注意：忽略条目移除 ≠ 可以发布。**推送**仍以 9.1-9.3 全量复核通过为前提，
-# 且 7.9/7.10 尚未完成；历史里已存在的中间态不会被后续清理抹掉。
-# 见 openspec/changes/add-qa-agent-source/design.md D4 与 tasks.md 10.1
+# 源码镜像区（mirror/）：已于 9/20 迁出至独立仓库维护
+# （作者拍板「移出，新库成唯一真源」，见 openspec/changes/add-qa-agent-source/tasks.md 10.1）。
+# 本仓库不再保留副本；忽略条目予以恢复，防止将来误把游离副本提交进本站仓库。
+mirror/
 
 # 编辑器与系统
 .DS_Store
