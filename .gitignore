@@ -20,6 +20,16 @@ _*.png
 # 本地词表放这里，CI 侧由仓库 secret GLOSSARY_WORDS 提供，两处内容保持一致
 GLOSSARY.local.md
 
+# 源码搬运处置清单：含真实文件名与业务点定位，等于内部模块地图，MUST NOT 入库
+# 模板与用法见 openspec/changes/add-qa-agent-source/design.md D6
+SANITIZE-LIST.local.md
+
+# 源码镜像区（mirror/）：D4 的揭幕动作（删除 mirror/ 忽略条目）已提前执行——
+# 作者要求给改造中的镜像区加版本控制兜底（此前 `edit` 曾把一个文件写坏且无回滚）。
+# 注意：忽略条目移除 ≠ 可以发布。**推送**仍以 9.1-9.3 全量复核通过为前提，
+# 且 7.9/7.10 尚未完成；历史里已存在的中间态不会被后续清理抹掉。
+# 见 openspec/changes/add-qa-agent-source/design.md D4 与 tasks.md 10.1
+
 # 编辑器与系统
 .DS_Store
 Thumbs.db

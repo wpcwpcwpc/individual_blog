@@ -1,0 +1,556 @@
+## 1. 闸门扩展（先于任何搬运）
+
+- [x] 1.1 `scripts/sanitize-check.mjs` 新增扫描根：源码镜像区（递归）
+- [x] 1.2 扩展名集合扩至源码类型（Python / TypeScript / TSX / YAML / JSON / CSS / HTML / Shell / 容器构建文件 / 依赖清单）
+- [x] 1.3 支持无扩展名文件的显式白名单（容器构建文件、依赖清单）
+- [x] 1.4 显式声明排除规则：构建产物、嵌入运行时、依赖目录、缓存、二进制与媒体文件
+- [x] 1.5 核对既有机制未被放宽：词表来源（本地文件 + CI secret）、词表缺失即失败、命中词打码、豁免清单仍告警
+- [x] 1.6 自测一：镜像区放一个含禁出词的临时文件 → 构建失败；移除 → 通过
+- [x] 1.7 自测二：镜像区不存在时扫描仍通过；无扩展名白名单内文件被扫描、白名单外被跳过
+- [x] 1.8 记录构建耗时基线（扫描面扩张前后各一次），若明显劣化则评估按目录分批扫描
+  - 实测：106 文件 / 3 次运行 107 / 99 / 100 ms（含进程启动）；不启用分批扫描
+
+## 2. 清单、隔离与文档
+
+- [x] 2.1 本地编写 `SANITIZE-LIST.local.md`：按目录分节，字段为「文件 / 判定 / 依据 / 状态」
+- [x] 2.2 核对 `.gitignore` 已覆盖 `SANITIZE-LIST.local.md` 与 `GLOSSARY.local.md`
+- [x] 2.3 编写镜像区 README：性质声明、处置规则、批次台账
+- [x] 2.4 `GLOSSARY.md` 补充源码类边界与登记（禁出词表本体仍不入库）
+- [x] 2.5 `RELEASE-CHECKLIST.md` 增加源码镜像核对项（脱敏、体量、可运行、揭幕）
+- [x] 2.6 `mirror/` 加入 `.gitignore`（改造期隔离；揭幕时删除该行）
+- [x] 2.7 README 更新为「可运行版本」形态声明（含未覆盖项待补）
+- [x] 2.8 变更文档同步：proposal / design / specs 更新为可运行目标与四级处置
+
+## 3. 首轮删减（顺序即安全性，见 D13）
+
+作者已手工完成全量拷贝（`mirror/qa-agent/`、`mirror/qa-agent-ui/`）。**拷贝覆盖了此前 4 批处置成果**（R17），因此本组不是"应用已完成批次"，而是对原始副本重做首轮删减。顺序 MUST NOT 颠倒。
+
+- [x] 3.1 全量拷贝后端源码至 `mirror/qa-agent/`：作者手工执行（2026-09-17）
+  - 实测带入：`.env`（12 项存活凭证）、`docs/`、`openspec/`、`tests/`、`scripts/`、`eval/`、`output_*.txt`
+  - 副作用：覆盖此前 4 批已脱敏内容
+- [x] 3.2 全量拷贝前端源码至 `mirror/qa-agent-ui/`：作者手工执行
+  - 实测带入：`.env.local.bak`、`output_build.txt`、`output_test*.txt`
+- [x] 3.3 业务 Agent 先行：删除 `agents/builtin/` 的 17 个业务 Agent（保留 `general_agent` 与 `plan_agent`）
+  - 依据：装配层 `agents/base.py` 仅引入 4 个通用中间件；业务中间件与业务工具全部由业务 Agent 自行引入
+  - 注意：不能按"引入了 hook / tool 的 Agent"推断，实测另有 8 个不引入任何中间件的纯业务 Agent（配置分析、用例生成、用例改写、测试点抽取、缺陷结构化、配置校验、派发、工坊）——按引用关系推断必漏
+  - 同批：`agents/registry.py` 的 `_register_builtins()` 收窄为两个通用 Agent
+  - **后续变更（见 4.8）**：`plan_agent` 于 4.5 批次一并删除（coordinator 保留，其 Phase 0 自动跳过）；`case_studio_agent.py` 于 4.8 从源仓库回填。`agents/builtin/` 现为 `general_agent` + `case_studio_agent`，而 `agents/registry.py` 的 `_register_builtins()` 只注册 `general_agent`
+  - 验证：3 个保留文件 `py_compile` 通过；孤儿引用核对显示 KEEP 面（`agents/` `api/` `core/` `coordinator/` `hooks/` `skills/` `tools/` `memory/` `mcp_service/` `db/` `main.py`）**零残留引用**，全部残留集中在已排期删除的 `eval/`、`tests/`、`version_capture/`、`workflows/`
+- [x] 3.4 业务路由摘除：`api/server.py` 的 **19 个**注册点（case-studio ×3、testagent-webhook、eval、case-gen-records、leaderboard、version-dataset、qastudio-folders、testcase-gen-skills、case-templates、case-versions、issue-detail、issue-desc、credential、test-exec ×2、script-repo-sync、team-os）
+  - 比首轮清单多 3 个：`case-templates`、`case-versions`、`team-os` 同属用例域
+  - 同批：清掉 `api/server.py` 中**嵌在通用端点里的业务分支**——lifespan 的跑测系统种子与孤儿收尾、工具注册表的 12 个业务工具（含设备平台工具）、会话端点的用例描述前置分析与上传目录透传、应用描述与 docstring 里的内部标识
+  - 同批：`auth/dependencies.py` 的角色模型整体删除。真实消费者 3 处（评测路由 + 追踪接口 ×2），追踪侧改为**一律强制按用户隔离**（fail-closed）
+  - 验证：`py_compile` 通过；`api/server.py` 按业务 token 全量检索**零命中**（findstr 退出码 1）；角色模型在 KEEP 面零残留（残留仅在已排期删除的 `eval_routes.py` 与 `tests/`）
+- [x] 3.5 孤儿回收：删除 44 个零引用文件（`api/` 20 · `hooks/` 13 · `tools/` 11）
+  - 判定方式：先按"全仓检索 `from <pkg>.<module>`"确认 KEEP 面零引用，再删除；MUST NOT 按业务属性人工判断
+  - 删除面：`api/` 19 → **20 删**（业务路由模块 + 用例描述前置分析）；`hooks/` 23 → **13 删**；`tools/` 35 → **11 删**
+  - **跨层依赖拦截点**：`api/workflow_os_adapter.py`（KEEP 路由）引用了业务 hook `hooks.livestream_hook`（3 处）。该引用包在 `try/except ImportError` 内，删除**不会崩**，但会留下业务残留——按 D2 减法优先整块删除直播联动（函数定义 + 4 处调用 + run_id 捕获机制 + 内部变更名注释），保留通用的事件流转发
+  - 验证：全量 `compileall` **ALL_COMPILE_OK**；KEEP 面按 24 个已删模块检索**零命中**（findstr 退出码 1）
+  - 注意：`py_compile` / `compileall` 会生成 `__pycache__`，须在 3.8 体量核对中清除
+  - 待办（转入 4.1）：`hooks/mcp_safety_hook.py` 被 KEEP 装配层 `agents/base.py` 引用，机制（阻塞时长护栏）与业务耦合度需专项判断，暂留
+- [x] 3.6 内部地址清零（D14）：入口文件的 MCP 运行时注入块 + `core/config.py` 的默认值 + `.env` 整体删除并换全占位模板
+  - `main.py`：删掉 MCP 运行时注入块（`MCP_QACLIENT_URL` / `MCP_GAME_DEBUG_ENABLED` / `MCP_CODEMAP_*` 三条合成通路，−55 行，连带清掉随之失去用途的 `json` / `os` / `tempfile` 导入）；清掉内部产品名（`qaClient.exe`）与内部变更名注释 5 处；`--run-script` 机制保留，注释改为通用表述
+  - `core/config.py`：删除 **25 个**字段——零业务消费者的内部集成配置（问题单描述 3 · 事件中心 2 · S3 5 · 报告回填 1 · 直传 1 · 直播 7）与已删子系统的专属配置（工坊 4 · 脚本库 1 · QAClient 嵌入 1）；`mongo_uri` 默认改 `localhost`；`session_secret_key` 去默认值 + 缺失拒绝启动校验（D15）
+  - `.env` 整体删除（含 **12 项存活凭证** 与 Milvus / Mongo / codemap / RTMP 内网地址）；`.env.example` 重写为全占位模板
+  - 顺带回收死链（判定方式同 3.5，逐项确认零引用）：`services/`（`script_repo_sync.py` + `__init__.py`）· `core/game_repo.py` · `workflows/livestream_lifecycle.py` · `core/startup_probe.py` · `api/docs.py`（内部文档浏览器，`api/server.py` 注册点同步摘除）
+  - 地址级清零：`api/_shared.py` 默认身份改 `local`；`tools/rag_query.py` 内网端点 / docset / project 全部清空并改为「未配置即返回 None」；`core/local_config.py` 路径改 `%APPDATA%/qa-agent`；`agents/base.py` · `core/frozen_runner.py` · `api/upload_inject.py` 内部 SDK 名与实证 case 引用清除
+  - 验证：全量 `compileall` **ALL_COMPILE_OK**；本轮 5 个已删模块在 KEEP 面零残留引用
+  - **验证范围（重要）**：本任务达成的是「配置面 + 入口 + 共享常量」清零。全仓「内部主机名与内部系统名零命中」**尚未达成**，余量按批落在 4.1 / 4.2 / 4.4 / 4.5 / 5.x / 7.2 / 7.7，逐项清单见各任务（不得视为 3.6 未闭环，此即 4.x 存在的理由）
+- [x] 3.7 非代码清理：`docs/`、`openspec/`、`scripts/`、`tests/`、`eval/`、`version_capture/`、`output_*.txt`、`.env.local.bak`
+  - 后端删除：`.claude/`（mcp.json + 4 个业务技能目录）· `docs/`(38) · `openspec/` · `scripts/` · `tests/` · `eval/` · `version_capture/` · `tmp/` · `web/`（Vite 构建产物）· `__pycache__`
+  - 前端删除：`node_modules/` · `dist/` · `openspec/`(211) · `docs/` · `output_build.txt` · `output_test.txt` · `output_test_all.txt` · `dev_smoke.log` · `.env.local.bak` · `.env.local`
+  - **隐藏目录按 `dir /a` 显式核对**（本任务预告的漏看项）：`mirror/qa-agent/.claude/skills/` 确认删除，含 `issue-testcase-generator/.skill-cache`
+  - 连带处置：`api/docs.py`（内部文档目录树浏览器）与其注册点——文档源整体删除后该路由只剩空壳，按 D3 判定降级为 CUT
+  - **例外（见 4.8）**：`.claude/skills/case-studio` 与 `.claude/skills/qa-debug-automation` 于 4.8 回填（case-studio 回填依赖）
+- [x] 3.8 体量核对：无本地配置文件与备份、无构建产物、无嵌入运行时、无依赖目录、无缓存
+  - 本地配置文件与备份：`.env` · `qa-agent-ui/.env.local` · `.env.local.bak` 均已删除，仅保留 `.env.example` 全占位模板
+  - 构建产物：`web/` · `qa-agent-ui/dist/` · `output_*.txt` · `dev_smoke.log` 已删
+  - 依赖目录与嵌入运行时：`node_modules/` 已删；无 `.venv` / `data/` / 嵌入运行时
+  - 缓存：`__pycache__` 全清（含 3.5 / 3.6 的 `compileall` 产物）
+  - 实测：镜像全树 **52 目录 / 395 文件**（其中 `.py` 144）
+
+## 4. 剩余细部核对（3.x 之后的补漏）
+
+首轮删减（3.3–3.7）已覆盖整体 `CUT` 面。本组只处理首轮之后的残余：与业务耦合的混合文件、以数据模型为载体的内部事实、以及仅靠依赖关系判定不出的内部语义。
+
+仍走四步：逐文件判定表 → 作者拍板 → 执行处置 → 记账。
+
+- [ ] 4.1 工具层细部：工具注册表与通用工具基类保留确认；内部集成工具的残留引用
+  - [x] `hooks/mcp_safety_hook.py` 去业务骨架（机制保留）：**1186 → 371 行**
+    - `_AGENT_TOOL_ALLOWLIST` 只留 `CaseStudioAgent`，删除 6 个已删 Agent 的条目（`QAPlanAgent` / `EnvEnsureAgent` / `TestRunnerAgent` / `PostProcessAgent` / `GenerateCaseAgent` / `IssueTestcaseAgent`）及其业务工具名（`get_qastudio_upload_context` · `upload_qastudio_case` · `get_case_template` · `upload_video_to_s3` · `set_montage_session` · `upload_report_to_s3` · `set_agent_report` · `find_symbol` / `search_code` / `get_symbol_detail` / `get_call_chain` / `get_dependencies` / `query_cypher`）
+    - 整段删除仅服务已删 Agent 的机制：mbw-cli 强制降级（签名识别 + 探活脚本路径解析 + 即时探活 + 硬拦截）· 客户端崩溃自愈解锁（`_GAME_DEBUG_MCP_PORT = 19836` 与 `127.0.0.1:19836` powershell 端口探测字面量、`_CLIENT_HEAL_GUIDANCE`、`_CRASHED_RECOVERY_OVERRIDE`、`_CLIENT_HEAL_UNLOCKED` 进程级缓存）· TestRunner 天花板 + 故障终止护栏 · PostProcess repl 黑名单 · 工具调用最小间隔限流（`_AGENT_TOOL_MIN_INTERVAL`）· EnvEnsure bash MCP 拦截
+    - 保留：per-agent 工具白名单机制本体 + 工具名键控的参数纠正与结果补充（坑1/2/3/6/7/10/11/12，覆盖 `repl_execute` / `search_gm_by_intent` / `call_gm_command` / `bash`）
+    - 判定方式同 3.5：逐个条目核对「是否存在同名 Agent」，零消费者即删（不按业务属性推断）
+  - [x] `skills/builtin_seed.py` 整体 CUT（3 个 H73 用例生成 skill 种子，其专属 Agent 已删，消费者 `GET /skills/testcase-gen` 已在 3.4 摘除）+ `api/server.py` lifespan 的调用点同步删除。用户上传 skill 通路（`skill_upload_routes` / `materializer` / `skill_discovery_tool`）不受影响
+  - [x] `core/case_count.py`（QAStudio 导出树计数）：已随 4.5 孤儿回收
+  - [x] Coordinator 保留后的文案清理：`coordinator/prompts.py` 全文去业务化（默认 Worker 表与示例中的 `PlanAgent` / `QAAutomationAgent` / `ConfigAnalyzerAgent` 改为注册表实际 Agent、删除 Hunter2 / GM 指令 / 武器配表类示例、`QA Coordinator` → `Coordinator`、删除已失效的 `docs/` 引用）；`core/instructions.py` 去 `H73` 与已不存在的 `hunter_execute`；`core/prompts.py` 协调者工具段本就通用，无需改动
+  - [x] 失效默认值修复（3.3 / 4.5 删 Agent 后留下的悬空引用）：`api/schemas.py` 会话默认 Agent `QAAutomationAgent` → `general-agent`；`coordinator/team_builder.py` 默认 Worker 表 `["PlanAgent"]` → `["GeneralAgent"]`（2 处）+ docstring；`core/config.py` 的 `(PlanAgent)` / `QAPlanAgent` 注释与 `game_client_root` 示例路径（含 `/trunk`）
+  - [x] **拍板 A：RAG 检索链路整体 CUT**（作者拍板「用不上」）。删除面：
+    - 文件：`tools/rag_query.py`（外部 docset 检索 + token 换取 + contexts 解析/selftest）· `api/knowledge_bases.py`（kb_id → docset_id 登记 CRUD）
+    - `api/server.py`：`rag_query` 导入 + 工具注册表条目 · `knowledge_bases` 路由注册点 · `_resolve_kb_docset_prefix()`（KB→docset_id 提示词注入）· `send_message` 内 `kb_prefix` 分支（原 `skill_prefix or kb_prefix` 合并拼接退回单 skill 前缀）
+    - `api/schemas.py`：`SendMessageRequest.kb_id` 字段 · `core/session_state.py`：`current_docset_id` 字段 · `db/models.py`：`KnowledgeBase` 模型（含 `pipeline` 业务枚举）· `db/mongo.py`：该模型的 import 与 `init_beanie` 注册
+    - `agents/builtin/general_agent.py` / `agents/builtin/case_studio_agent.py`：工具表去掉 `rag_query` + 各自指令里的 RAG 段落（case-studio 的「UUID/物品ID 必须 rag_query 查证」改为「必须来自目标仓库真实配置或既有用例」）· `hooks/mcp_safety_hook.py`：白名单去掉 `rag_query`
+    - 注释级残留清理：`core/compression.py`（2 处举例）· `core/config.py`（3 处）· `api/server.py` 工具体积日志注释 · `api/skill_upload_routes.py` 鉴权说明
+    - **前端残留（转 6.3）**：`pages/KnowledgeBasesPage.tsx` · `api/knowledgeBases.ts` · `store/knowledgeBases.ts` · `components/generate-case/KbSelect.tsx` · `navRegistry.ts` 的 `knowledge-bases` 条目 · `App.tsx` 路由 · `kb_id` 透传（`MessageInputBar` / `RefineChat` / `GenerateCasePage` / `types/api.ts` / `utils/restoringSend.ts`）· `timeline/ThinkingBlock.test.tsx` 的 rag_query 文案夹具
+    - 验证：本轮改动文件 `py_compile` 通过；全镜像按 `rag_query` / `kb_id` / `KnowledgeBase` / `knowledge_bases` / `docset` 检索，**后端零命中**（仅剩前端与本文档）
+  - [~] **拍板 B：作者决定跳过**（原案：case-studio 回填带回的设备平台语义）—— `api/case_studio_game_routes.py` 的 `qaclient` MCP 通道与 `MBWorkbench` · `api/case_studio_reports_routes.py` 的 `qaclient svn_info` 发现 · `tools/case_studio_tools.py` / `core/game_repo.py` 的 `svn_info` + `.codemaker/rules/*.mdc` + `Automation/Cases/Case*.py` 约定 · `.claude/skills/` 两个 SKILL.md 的内部操作指引。**不在本变更处理**，留待后续变更；本节台账保留清单以便追溯
+  - 验证：本轮 5 个改动文件 `py_compile` 通过；`builtin_seed` / `_client_heal_unlocked` / `EnvEnsureAgent` / `TestRunnerAgent` / `PostProcessAgent` / `QAPlanAgent` / `ConfigAnalyzerAgent` 在 `hooks/mcp_safety_hook.py` 内零命中
+- [x] 4.2 记忆层与数据模型（连接、集合、嵌入、蒸馏、注入）：与内部向量库 / 内部库的耦合边界
+  - **数据模型层 21 → 9 个**。判定方式同 3.5：全仓检索模型名 + 其 snake_case 集合名（含 raw Motor 字符串用法），**零消费者即删**
+  - 删除 **14 个**死 schema（仅出现在 `db/models.py` 自身与 `db/mongo.py` 注册表）：`EvalRun` · `EvalScorecard` · `CaseGenRecord`（字段含 `qastudio_url` / `case_count`）· `CaseVersion` · `VersionDataset` · `Demand` · `BugPoint` · `PrecisePair` · `TestPoint` · `UserCaseTemplate` · `RedmineCredential` · `TestMachine` · `CommandSet` / `CommandSetItem` · `TestRun` / `TestRunStep`（其中 `CommandSetItem` 注释直指内部脚本库、`TestMachine` 绑 QAClient 边端主机）
+  - `db/mongo.py`：import 表与 `qa_agent_db` 的 `init_beanie` 注册表同步收窄；模块 docstring 与 `init_db` docstring 去掉内部仓库名
+  - **内部库命名清零**：`QaManagementInfoFromRedmine` → `EmployeeDirectory`（集合 `qa_management_info_from_redmine` → `employee_directory`）· `QaclientUser` → `AgentUser`（集合 `qaclient_users` → `agent_users`）· 跨库第二 `init_beanie` 的库名 `h73_user_management` 改为配置项 `auth_directory_db`（默认空 = 不注册，登录闸门降级为「未知用户」，与 Mongo 不可用时的既有 fail-closed 行为一致）
+  - 连带：`auth/service.py`（`verify_employee` / `get_user_info` / `get_or_register_user` 三处引用与文案）· `auth/router.py`（`Netease OpenID` 与内部仓库名注释 → 中性表述）· `core/llm_key_loader.py` 与 `memory/`（Milvus 链路）核对无内部事实，无需改动
+  - `db/test_exec_repo.py`（内部只读脚本库）：已于 4.5 回收
+  - 验证：全镜像按 `redmine` / `eval_run` / `version_dataset` / `test_machine` / `command_sets` / `test_exec` 检索**零命中**；`db/models.py` · `db/mongo.py` · `auth/service.py` · `auth/router.py` · `core/config.py` `py_compile` 通过
+- [x] 4.3 接口与事件层：会话管理、流式事件适配之外的部分
+  - **拍板 A（作者）**：本批只清 `session_state` 5 个 provenance 字段 + adapter 的 fs_id 注入（含 HTTP 形参）；其读取面记账到 5.x / 6.x，不跨批改前端契约
+  - 判定表（零引用验证法同 3.5）：`case_issue_id` 写入端/读取端**双零**；`current_diff_summary` 双零；`current_fs_id` 仅被 adapter 写（2 处）无人读；`current_case_content` / `commit_result` 读取面在 `core/stream_adapter.py`（run_complete 载荷），写入端 `fs_id_capture_hook` / `case_refine_agent` / `case_refine_record_post_hook` 已随前序批次删除 → **全链生产端已死**
+  - `core/session_state.py`：删 5 字段（`case_issue_id` · `current_case_content` · `current_diff_summary` · `current_fs_id` · `commit_result`）及注释中已删组件的指名；`# ---- Game context (H73-specific) ----` → `# ---- Target-under-test context ----`（`game_version` / `module` 有 60+ 处活消费者，KEEP）
+  - `api/agent_os_adapter.py`：删 `fs_id` Form 形参 · `session_state.current_fs_id` 注入块 · `_run_state["current_fs_id"]` · `fs_id: <id>` 消息前缀改写块；新增 `_strip_user_id_prefix()` 替代 2 处硬编码 `h73_` 前缀剥离，前缀改配置项 `agent_os_user_id_prefix`（默认空 = 不剥离，D14）
+  - `core/config.py` 新增 `agent_os_user_id_prefix`；`.env.example` 增补该项
+  - **已摘路由遗留在通用端点的提参 / 悬空默认**：`api/skill_upload_routes.py` —— 死助手 `_valid_agent_names()` 改为校验器（agent_id 与 name 双写），新增 `_resolve_skill_agent()` 替换 2 处悬空默认 `issue-testcase`（镜像注册表内无此 agent → 上传即悬空绑定；源仓库该默认值已随业务 agent 删除而失去所指）：frontmatter 有 `agent` 则必须已注册（否则 400），无则回填首个注册 agent（注册顺序 = 装配顺序）；docstring / 注释里的 `issue-testcase` 与已删 `_router` / qa-auto 路由指代清零。`paradigm` / `triggers` 保留（前端 `generateCase.ts` / `InputForm` / `SkillManageModal` 仍消费，随 6.x 清）
+  - `agents/base.py`：注释去掉内部变更名 `harden-issue-testcase-context-cache`
+  - **MCP 发现面降级（本任务第 3 项）**：`settings.mcp_config_path` 默认值 `.claude/mcp.json`（该文件已随 3.7 删除）→ 默认空串，语义定为「**空配置即无 MCP**」（D14）；`mcp_service/manager.py`（`_config_path` 默认空 · `_load_config` 空路径短路 · `_save_config` 空路径改为只留内存 + warning 不落盘）· `mcp_service/loader.py`（`load_mcp_config` / `load_mcp_tools` 默认空 + 空路径短路；`create_default_mcp_config` 清掉 `game_debug_mcp` 内部服务器与 H73 注释，改空 `servers`；`_L2_TOOL_PATTERNS` 去 `hunter_execute`）· `core/prompts.py` 去 `HUNTER_EXECUTE` 常量与默认工具集条目 · `.env.example` MCP 段写明「留空 = 仅内置工具，运行期新增的 MCP 只驻内存」
+  - **记账（不跨批执行）**：
+    - 转 5.1：`core/stream_adapter.py` run_complete 载荷的 `case_content` / `commit_result` / `fs_id` 与 `_FSID_STRICT_RE` 正则兜底 —— 生产端已全删，读取面必然读到空值（`_read_state_field` 走 `getattr(..., None)`，**不会崩**）
+    - 转 6.1：前端 case-refine 面（`GenerateCasePage.tsx` · `api/caseVersions.ts` · `store/caseRefine.ts` · `types/events.ts` 三处字段 · `store/sessions.ts` run_complete 透传 · 4 个测试夹具）
+    - 转 4.6：`api/schemas.py:RefineSessionResponse` · `POST /cases/{fs_id}/refine-session`（`case_studio_reports_routes.py`）· `db/user_sessions.py:get_refine_session_by_fs_id` · `SessionEntry.refine_fs_id` 及索引 —— 属工坊面，随工坊决定
+  - **外部状态变更（记录，不处置）**：并行变更 `add-ai-coding-agent` 已用 `CodingAgent` 替换 `CaseStudioAgent`（删 `agents/builtin/case_studio_agent.py`、registry 改挂 `build_coding_agent_definition()`）。据该变更 design D7，`hooks/mcp_safety_hook.py` 的 `CaseStudioAgent` 白名单条目为**有意保留的死键**（按 agent 名查表，不存在即不匹配放行）；`api/case_studio_*` 路由 / `tools/case_studio_tools.py` / `session_state.case_*` 字段本次不动。→ 4.1 拍板 B「跳过 case-studio」与该变更结论一致，不再单列
+  - 验证：全量 `compileall` **ALL_COMPILE_OK**；`__pycache__` 归零；`current_fs_id` / `case_issue_id` / `current_diff_summary` / `issue-testcase` 镜像内**零命中**；`.claude/mcp.json` 与 `hunter` 残留仅 `DEPLOYMENT.md`（7.2 / 7.8）与 `README.md`（7.x）
+- [x] 4.4 认证与部署脚本、容器编排文件（凭证与内网事实集中区，逐行核对）
+  - `auth/router.py` · `auth/service.py`：OpenID 登录 + 内部库白名单校验（**替换动作在 7.7**，本组只逐行核对并在 7.7 前完成前置清点）
+  - **前置已清（4.2 连带完成）**：`auth/router.py` 的内网 OpenID 端点 `https://login.netease.com/openid/`（硬编码 2 处）改为配置项 `openid_endpoint`，未配置时两个登录路由返回 503 + 明确提示；模块/docstring/注释中的公司名与内部仓库名清零。7.7 只需替换 provider 本身，无需再找地址
+  - **逐个文件核对（5 个文件全部执行处置，非仅记账）**：
+    - `deploy.sh`：删内网 PyPI 常量 `NETEASE_PYPI` 与整个 `common_sdk` 安装/校验步骤（install 步骤 3 与 check 段 2 处，步骤号重排 3→4）；头部工作流注释与 `install` 用法文案同步；`check_svn` 告警去掉已 CUT 的 `ets-config-check` / `task-trigger-testcase-gen` 两类名，改 `repository-backed tools`。判定依据：`common_sdk` 在镜像内**零代码消费者**（全仓检索仅命中 deploy.sh / qa_agent.spec / requirements.txt 注释），且 deploy.sh 引用的 `startup_probe` 模块在镜像内不存在
+    - `qa_agent.spec`：`datas` 去掉 `('web','web')`（目录不存在）与 `('..\\docs\\qaclient','docs\\qaclient')`（指向镜像外的内部文档目录），保留 `.claude\\skills`；删 `collect_all('common_sdk')`；`hiddenimports` 去 `tidevice`（零消费者）
+    - `Dockerfile`：`LABEL maintainer="H73 QA Team"` 删除（`description` 保留）
+    - `requirements.txt`：头部注释去 `Windows QAClient frozen runtime` / `QAClient.exe` / `common_sdk 由内网 NetEase PyPI 单独安装`；依赖清单本身不动（替换决策在 7.1）
+    - `pyproject.toml`：`description` 去 `for H73 project`、`authors` 改 `QA Agent Team`、`agno` 注释去 `QAClient 冻结运行时`、Mongo 版本注释去「内网 mongo 报告 wire v7 (MongoDB 4.0)」改通用表述、MCP 注释 `Windows frozen` → `Frozen builds`
+    - `DEPLOYMENT.md`：AIGW 段（含 `_qidian_qa_h73` 实证引用）→「限流错误文本检测」，只在实现侧保留通用机制描述；`hunter_execute` 从权限表移除；H73 persona 示例改通用；`MCP_CONFIG_PATH` 默认值改「（空）」；**改错与陈旧项**：健康检查 `/health` → `/api/health`（2 处，实际路由前缀 `APIRouter(prefix="/api")`）、API 速查全段补 `/api` 前缀、`agent_name: "qa_automation"` → `general-agent`、WS 路径 → `/api/sessions/{id}/stream/ws`、review 动作 `approve/reject` → `confirm/cancel/modify`（真实枚举）、`permission_mode: ask # ask/auto/safe` → `default/plan/bypass`（含 Permission Mode 段）、环境变量表 3 张按 `core/config.py` 实际字段重写（`SQLITE_PATH` · `STORAGE_DSN` · `MONGO_URI` · `INTERRUPT_TIMEOUT_MINUTES` · `DEFAULT_MAX_TURNS=25` · `API_HOST/API_PORT` · `EMBEDDING_MODEL`）、`AGENTS_DIR` 行改注「无环境变量，由 `agents/agent_loader.py` 参数决定」、Milvus 段删掉不存在的 `memory/milvus_client.get_milvus_client` / `ensure_collections` 手动建表脚本与 `qa_memory` / `qa_session` 用途表（两者实为 `LEGACY_COLLECTIONS`），改为真实三集合 `qa_execution_log` / `qa_knowledge` / `qa_conclusions` + 自动创建说明
+  - **docker-compose.yml**：`HIL_TIMEOUT_SECONDS`（镜像内无此配置字段）→ `INTERRUPT_TIMEOUT_MINUTES`；新增 `STORAGE_DSN` 指向 compose 服务 `postgres`（原缺该变量时 `storage_dsn` 落到 `localhost` 默认值 → 容器内必连不上，属真实缺陷），并注明覆盖 `POSTGRES_PASSWORD` 时需同时覆盖 DSN；未被应用读取的 `POSTGRES_HOST/PORT/DB/USER/PASSWORD` 从 qa-agent 服务环境移除（postgres 服务自身初始化仍用 `POSTGRES_*`）
+  - **转 7.8 的遗留**：compose 的 postgres 路径需要 `psycopg2`，而 `requirements.txt` 未含（仅在 `pyproject.toml` 的 `postgres` extra 中），Dockerfile 只装 `requirements.txt` → 该路径当前跑不通；因涉及依赖清单决策，随 7.1 / 7.8 一并处理
+  - **连带发现（转 7.6 全量自查）**：`agents/builtin/general_agent.py` 指令仍写「你是 H73 项目的通用智能助手」并列 `Hunter2 远端脚本推送`；`agents/base.py` / `coordinator/coordinator_agent.py` / `coordinator/team_builder.py` / `core/engine.py` 的 `game_version: H73 game version context` docstring；`core/models.py` (`AIGWModel`) 与 `core/rate_limiter.py` (`_AIGW_TPM_CONTENT_*`) 属 7.2 既定范围；`api/features.py` / `api/server.py` 的 `QAClient` 指代、`README.md`（7.9）、`tools/task_tools.py` 的 Hunter 示例文案
+  - 验证：`bash -n deploy.sh` 通过；5 文件按 `netease|nie\.|AIGW|qidian|H73|hunter|common_sdk|tidevice|QAClient` 检索**零命中**
+- [x] 4.5 业务流水线与编排工作流（首轮未覆盖的残余）
+  - **整体 CUT `workflows/` 全层**（作者拍板）：`qa_auto_workflow` · `testagent_config` / `testagent_dispatch` · `sidequest_*` · `gate_hook` / `intent_router` · `registry` · `teams/` · `shared_tools` · `livestream_lifecycle`（后者已于 3.6 回收）
+  - 连带 CUT 工作流接口层：`api/workflow_os_adapter.py`（`GET /workflows` · `POST /workflows/{id}/runs` · `/workflows/ws`）+ `api/server.py` 两个注册点。判定依据：注册数为零 → 路由只剩空壳（D3）；且前端聊天走 `/sessions/*`（`api/sessions.ts`），对 `/workflows/*` 零调用（仅 `testExec.ts` 注释提及，属业务页）
+  - 连带清理 KEEP 交叉点：`core/tracing_exporter.py` 去掉 `workflows.registry` 懒查表（span 形状启发式检测保留，本身通用）
+  - 连带孤儿回收：`core/case_runner.py` · `core/env_probe.py` · `db/test_exec_repo.py` · `core/case_count.py`（判定方式同 3.5，逐项确认零引用）
+  - **Coordinator 模式：作者拍板保留**（非 workflow，是「coordinator Agent 动态 spawn worker」的模式）。`plan_agent` 删除后其 Phase 0 规划自动跳过（`agent_registry.get("PlanAgent")` 返回 None 时告警降级，不崩）
+  - 验证：全量 `compileall` **ALL_COMPILE_OK**；`from workflows` / `workflows.` 在 KEEP 面零命中
+  - **遗留（转 4.1）**：`coordinator/prompts.py` 的 QA 专用文案与已失效的 `agent_spawn(agent_name="PlanAgent", ...)` 示例；`core/instructions.py` 的 `COORDINATOR_LEADER_INSTRUCTIONS`
+  - **补记（4.3 连查发现，待拍板）**：`db/workflow_archive.py` + `api/startup_recovery.py:recover_orphan_workflow_sessions()` + `api/server.py` 两个启动调用点（`ensure_archive_indexes` · recovery）构成一套只服务 `agno_workflow_sessions` 的死子系统——workflow 层已 CUT，镜像内无任何写入方能产出该集合文档；`api/agent_os_adapter.py:list_traces` 的 `workflow_id` 过滤形参与 `core/storage.py` 的 `workflow_id` 参数同理（无 workflow span 生产者）。判定方式同 3.5（全仓检索 `workflow_archive` / `recover_orphan_workflow_sessions` 仅自引用 + 上述启动调用点）。**建议随 4.6 / 7.x 一并 CUT** → **4.6 已按作者拍板执行 CUT**（另连带清掉 `api/_shared.py` 的 `SSE_HEARTBEAT_INTERVAL_S` 与 `api/server.py` 的 `app.state.workflow_db`，二者同为工作流层零消费者残留）
+- [x] 4.6 评测、报告解析、用例执行、版本采集、数据同步（首轮未覆盖的残余）
+  - 原始范围：`db/` 下的用例版本与执行记录模型 · `version_capture` 遗留引用 · `core/` 与 `coordinator/` 中的派发 / 版本上下文参数
+  - 原始范围：4.3 挂账：用例细化会话链的对外面——`api/schemas.py:RefineSessionResponse` · `POST /cases/{fs_id}/refine-session`（`api/case_studio_reports_routes.py`）· `db/user_sessions.py:get_refine_session_by_fs_id`（含 `db/models.py:SessionEntry.refine_fs_id` 与 `sessions.refine_fs_id` 索引）——后端消费方（case-refine agent / 前端 `caseVersions.ts`）均已删或转 6.1 挂账
+  - **范围核查结论（原范围 2/3 已在 4.2 完结）**：`QaPhaseCheckpoint` / `QaArtifactVersion` **不是**用例版本残留而是活模型（消费者：`hooks/interrupt_manager.py` · `tools/review_tools.py` · `tools/artifact_tools.py` · `hooks/reminder_hook.py` · `core/stream_adapter.py:1273` · `api/server.py` 级联清理）→ **KEEP**；`version_capture` 全镜像**零命中**，已在 4.2 随 `VersionDataset` / `CaseVersion` 删除；`core/` 与 `coordinator/` 内 `dispatch` / `game_version` 派发参数本轮**零命中**（无残留可处置）
+  - **拍板（作者）**：本任务残余 + refine-session 链**全部 CUT**；并追加拍板「**用例生成（工坊）工具残留整体 CUT**」，同时要求**不误伤 coding-agent**——`tools/coding_tools.py` · `agents/builtin/coding_agent.py` · `hooks/coding_guard_hook.py` · `core/reject_note.py` · `api/approvals_routes.py` 一行未改
+  - 判定方式同 3.5（零消费者验证），逐项证据：
+    - `tools/case_studio_tools.py`：4 个工具原注册于 `api/server.py`，唯一消费者 `CaseStudioAgent` 已被并行变更 `add-ai-coding-agent` 删除；`CodingAgent` 改用 `tools/coding_tools.py` 自带的 `request_approval` / `write_file` / `edit_file` / `run_command`；且 agent 工具按 `tool_names` + `extra_tools` 显式装配（`agents/base.py:177`）→ 注册表内零引用
+    - `core/game_repo.py`：唯一消费者是上者
+    - `core/reports_parser.py`：唯一消费者 `api/case_studio_reports_routes.py` 已随并行变更删除 → 零消费者
+    - `core/config.py` 的 `game_repo_root` / `codemap_mcp_url` / `codemap_mcp_token` / `case_studio_reports_root`，以及 `game_client_root` + 派生属性 `automation_dir` / `qa_reports_current_dir`：全镜像**零命中**（后三者是工坊 `Automation/qa_reports` 目录布局遗留，早于本轮即无消费者）
+    - `core/session_state.py` 的 7 个 `case_*` 字段：唯一写入方是 `tools/case_studio_tools.py`
+    - `api/server.py` 的 `from eval.mongo_store import recover_running_runs`：`eval/` 包在镜像内**不存在**，被 try/except 静默吞掉 → 评测崩溃恢复为死导入
+    - `api/_shared.py:SSE_HEARTBEAT_INTERVAL_S`：工作流 SSE 专用，4.5 CUT 工作流层后零消费者
+  - **整文件 CUT**：`tools/case_studio_tools.py` · `core/game_repo.py` · `core/reports_parser.py` · `db/workflow_archive.py` · `api/features.py` · `.claude/skills/case-studio/`（H73 工坊 SKILL.md，内含已 CUT 的 `rag_query` 铁律）。`.claude/skills/` 目录本体保留（`PROJECT_SKILLS_DIR` 默认值 + `qa_agent.spec` datas 均指向它），以 `.gitkeep` 占位
+  - **局部删除**：
+    - `api/server.py`：工坊 4 工具 import 与注册表条目 · lifespan「1.5 Workflow orphan recovery + archive index」两块（`recover_orphan_workflow_sessions` / `ensure_archive_indexes`）· 评测崩溃恢复块 · 「0.01 Agno BaseDb for Workflow persistence」（写入 `app.state.workflow_db` 后**零读取方**）· `features_router` 注册点
+    - `api/startup_recovery.py`：删 `recover_orphan_workflow_sessions()` 与 `_STALE_PAUSED_SECONDS`（**agent 抢救 `recover_orphan_sessions()` 及全部下游函数保留**，见补拍板 2）
+    - `core/config.py`：删上述 5 字段 + 2 派生属性
+    - `core/session_state.py`：删 7 个 `case_*` 字段及注释
+    - `hooks/mcp_safety_hook.py`：`_AGENT_TOOL_ALLOWLIST` 删 `CaseStudioAgent` 条目 → 表变空 `{}`；**机制本体保留**（4.1 已定：per-agent 工具白名单属通用能力，空表 = 全部放行），注释改写为「空表为默认态」
+    - `db/models.py`：删 `SessionEntry.refine_fs_id` 与 `sessions.refine_fs_id` 索引（`indexes = ["email"]`）
+    - `db/user_sessions.py`：删 `get_refine_session_by_fs_id()` + `_UserSessionsDAO` 方法 + `_ALLOWED_SESSION_KEYS` 的 `refine_fs_id`
+    - `api/schemas.py`：删 `RefineSessionResponse`
+    - `api/_shared.py`：删 `SSE_HEARTBEAT_INTERVAL_S` + docstring 去 workflow 指代
+  - **补拍板 1（workflow_archive 死子系统 = 4.5 补记的待定项）**：作者拍板「一并 CUT」→ `db/workflow_archive.py` 整文件 + `recover_orphan_workflow_sessions()` + lifespan 两调用点。依据：workflow 层已随 4.5 CUT，镜像内零写入方能产出 `agno_workflow_sessions` / `workflow_runs_archive` 文档
+  - **补拍板 2（`api/startup_recovery.py` 零调用方）**：作者问「对 agent 有没有抢救」→ 已澄清两者独立：`recover_orphan_sessions()` 是 **agent** 崩溃抢救（信号 `run_status`，实现完整、下游 6 个函数齐全），`recover_orphan_workflow_sessions()` 才是 workflow 专用。作者拍板「**仅保留 agent 抢救模块**」：模块与下游函数全部保留，**不接回 lifespan**（零调用方为既有问题，记账转 8.x；疑与 4.4 记录的「`deploy.sh` 引用的 `startup_probe` 模块在镜像内不存在」同源——原入口或随该模块被裁）
+  - **未执行（记账，不跨批）**：
+    - 转 5.1：`core/stream_adapter.py:1369` 注释「case-studio skill 铁律 6」（所指 skill 本轮已删）；同文件 430 / 452 / 485 的 `add-case-studio-*` 内部变更名
+    - 转 6.1：前端 feature-flag 面整体（`api/features.ts` · `store/features.ts` · `App.tsx` · `navRegistry.ts` 的 `requiresFeature` · `Sidebar.tsx` 过滤 + `pages/EvalPage/**`）——后端 `GET /features` 已删；前端 `getFeatures()` 失败已降级 `DEFAULT_FEATURES`，不崩
+    - 转 7.x（tracing 面）：`GET /traces` 的 `workflow_id` 形参与 `agent_type ∈ {agent, workflow}` 枚举校验 · `core/storage.py` 的 `workflow_id` 形参/查询键 · 前端 `pages/TracingPage.tsx` Workflow 分组表与 `components/tracing/AgentBreakdownTable.tsx`——无 workflow span 生产者（4.5 补记）
+    - 转 7.6（文本）：`core/agno_approval_patch.py`（`fix-case-studio-multi-approval` · 「脚本工坊四道审批门」）· `core/reject_note.py`（`specs/case-studio-approvals` 路径）· `core/storage.py`（`add-case-studio S2` · 「工坊审批门」）· `core/run_lifecycle.py`（「workflow path」）· `api/agent_os_adapter.py:145` · `core/context_usage.py:49` · `tools/wait_tool.py`（`qa-auto workflow` 2 处）· `api/server.py:826`（`try_set_running` 调用方枚举里的 `case-studio`）与 `api/server.py:1848`（「工坊 run 暂停」）。`agents/builtin/coding_agent.py:6` 与 `tools/coding_tools.py:40-41` 的工坊对比说明属并行变更自有内容，**不动**
+    - 转 7.9：`README.md` 的 `/workflows` 三行接口表
+    - 转 8.x：`api/startup_recovery.py:recover_orphan_sessions()` 零调用方
+  - 验证：本轮 10 个改动文件 `py_compile` 通过；全量 `compileall` **ALL_COMPILE_OK**；`__pycache__` 归零；镜像内按 `case_studio` / `game_repo` / `reports_parser` / `workflow_archive` / `recover_orphan_workflow` / `refine_fs_id` / `RefineSessionResponse` / `eval.mongo_store` / `api.features` / `features_router` / `game_client_root` / `automation_dir` / `qa_reports_current_dir` 检索**零命中**
+- [x] 4.7 内部规格文档、内嵌技能目录、变更记录、快照与测试夹具（整体 CUT，不进镜像区）
+  - **核查方式**：`dir /s /b *.md *.jsonl *.snap` + `dir /s /b /ad`（`mirror/` 被 gitignore，`glob_search` 在该目录恒空，须走终端或 `grep_search`）+ 全镜像按 `CHANGELOG` / `变更记录` / `快照` / `_snapshots` / `fixtures` / `__mocks__` / `conftest` / `openspec/` 检索
+  - 内部规格文档：镜像内**无** `docs/`（源仓库 `docs/qaclient/` 未进镜像）**无** `openspec/`（`qa-agent/.gitignore` 已含 `tests/` 与 `openspec/` 两行）；后端 `/api/docs/tree` · `/api/docs/content` 全镜像零命中 → 生产端早已不在
+  - 内嵌技能目录：`.claude/skills/` 仅剩 `.gitkeep`（`case-studio` / `qa-debug-automation` 于 4.6、4.3 前后清掉）；`skills/` 是产品 loader 包（`loader.py` / `materializer.py` / `expander.py` / `phase_cache.py` / `runtime_vars.py` / `skill_tool.py`），**非技能目录** → KEEP
+  - 变更记录：全镜像 `.md` 仅 5 个（`mirror/README.md` · `qa-agent/README.md` · `qa-agent/DEPLOYMENT.md` · `qa-agent-ui/README.md` · `qa-agent-ui/AGENTS.md`），无 CHANGELOG / 变更日志类文件 → 无项可处置；文档内容清零转 7.6 / 7.9
+  - 快照：无 `_snapshots/` · 无 `__snapshots__/` · 无 `*.snap` · 无 `*.jsonl` → 已 CUT
+  - 测试夹具：后端无 `tests/`、`conftest` / `fixtures` / `mock_data` 零命中；前端 22 个 `*.test.ts(x)` 为**产品自有用例**（vitest，`tsconfig.app.json` 类型校验通过）→ **KEEP**，其中 `components/generate-case/{CompactProgressCard,CurrentStepCard,PreAnalysisPreviewModal}.test.tsx` · `timeline/ThinkingBlock.test.tsx` · `utils/deriveSteps.test.ts` 已随 6.1 挂账
+  - **本任务唯一实存项（作者拍板：整体 CUT）——前端「使用说明」文档面**：后端生产端已不存在（见上），页面仍在，构成孤儿链
+    - 删除（3 文件 + 1 空目录）：`src/pages/DocsPage.tsx`（docstring 明写复用内部 `docs/qaclient/` Markdown）· `src/api/docs.ts`（`getDocsTree` → `/docs/tree`、`getDocContent` → `/docs/content`）· `src/components/docs/MermaidBlock.tsx`（仅 DocsPage 引用）→ `components/docs/` 目录随空删除
+    - 局部删除（3 文件）：`src/types/api.ts` 的 `DocNode` + `DocContentResponse`（仅上述两文件引用）· `src/App.tsx` 的 `import { DocsPage }`（原 15 行）与 `<Route path="/docs">`（原 215 行）· `src/config/navRegistry.ts` 的 `{id:'docs',label:'使用说明',icon:BookOpen,route:'/docs'}` 条目（原 104-109 行）与该文件 `BookOpen` 图标 import（表内唯一用处）
+    - 依据：D2 减法优先；机制本体（markdown + mermaid 浏览器）虽通用，但数据源是内部文档目录且生产端已零命中 → 按 4.7 范围「整体 CUT」，不做 GENERICIZE（GENERICIZE 需新增后端路由，超出本任务）
+  - 未执行（记账，不跨批）：`src/components/generate-case/PreAnalysisPreviewModal.tsx:5` 的「范式参照 DocsPage」注释——所指文件已在本任务删除，属 7.6 文本清理面，本批不动
+  - 验证：`tsc --noEmit -p tsconfig.app.json` **零报错**（deleted-file dangling import 清零）；全镜像按 `DocsPage` / `DocNode` / `DocContentResponse` / `api/docs` / `MermaidBlock` 检索仅剩上述 7.6 注释 1 命中；无 `*.tsbuildinfo` 等构建产物落盘
+- [x] 4.8 case-studio 回填（作者拍板：**撤销**首轮对工坊的 CUT）
+  - 触发：作者决定保留 `CaseStudioAgent`。单独回填 agent 无效（其 6 个审批工具在 `build_case_studio_definition` 里是 try/except 懒挂，缺工具会静默降级），且该 agent 属「UI → 路由 → agent」链、前端 `caseStudio.ts` 仍在镜像内 → 按闭环回填
+  - 从源仓库回填 7 文件：`agents/builtin/case_studio_agent.py` · `tools/case_studio_tools.py` · `core/game_repo.py` · `api/case_studio_routes.py` · `api/case_studio_game_routes.py` · `api/case_studio_reports_routes.py` · `.claude/skills/case-studio` + `.claude/skills/qa-debug-automation`
+  - `core/config.py` 回填 4 字段（`game_repo_root` · `codemap_mcp_url` · `codemap_mcp_token` · `case_studio_reports_root`），**默认值全空**——保留 3.6 的「不带内部事实」形态，工坊由 `.env` 配置驱动
+  - `api/server.py` 回填：3 个路由注册点 + 4 个工坊工具的注册表条目（`request_approval` · `write_case_file` · `case_repl_execute` · `case_codemap_search`，worker 批 `coordinator_visible=False`）
+  - 依赖核对：`auth.dependencies.get_current_user` · `core.stream_adapter.serialize_clarification_payload` · `core.storage.get_storage` · `core.reports_parser` · `tools.lazy_mcp_tool` · `db.mongo.get_motor_db_by_name` 均在镜像内 → 无需额外回填
+  - **代价（如实记账）**：回填带回的内部事实须在后续批次处理——`case_studio_game_routes.py` 全篇以 `qaclient` MCP 为载体（launch/restart/close client+server、`get_game_status`）且提到 `MBWorkbench`；`case_studio_reports_routes.py` 依赖 game repo `Automation/Reports/` 布局与 `qaclient svn_info` 发现；`tools/case_studio_tools.py` / `core/game_repo.py` 依赖 `svn_info` MCP、`.codemaker/rules/*.mdc`、`Automation/Cases/Case*.py` 约定；`.claude/skills/` 下的 SKILL.md 含内部操作指引
+  - 验证：全量 `compileall` **ALL_COMPILE_OK**；回填文件内 `netease` / `h73` / `hunter` / `qastudio` / `/trunk` **零命中**（残留为 `qaclient` / `MBWorkbench` / `svn_info` 等设备平台语义，转 4.1 / 4.4）
+  - **4.6 反向处置（作者拍板）**：本任务回填的 7 文件中，`tools/case_studio_tools.py` · `core/game_repo.py` · `.claude/skills/case-studio` 已随 4.6 整体 CUT（`case_studio_agent.py` 与 `api/case_studio_*` 三个路由文件由并行变更 `add-ai-coding-agent` 删除），`core/config.py` 的 4 个回填字段同步删除。4.8 的「回填」与 4.6 的「CUT」不矛盾：回填发生在工坊仍为活链时，CUT 发生在其 Agent/路由被 `CodingAgent` 取代之后
+  - **补记（4.1 发现并修复）**：本任务漏了注册点——源仓库 `agents/registry.py` 的 `_register_builtins()` 含 `build_case_studio_definition()`，回填时未同步，导致 `CaseStudioAgent` 不入注册表（会话创建会 404）。已在 4.1 补回该注册调用。教训：回填不能只看「文件是否存在」，必须核对「是否接入装配链」
+
+## 5. 重型混合文件专案（流式事件适配层）
+
+- [x] 5.1 深读该文件，产出结构说明：机制部分 / 业务分支 / 二者交界
+  - 已定位业务分支位置（供深读起点）：`core/stream_adapter.py` 约 391 · 994 · 1015 行（用例生成 provenance 与上传命令识别）；`_AIGW_TPM_*` 导入与用法见 7.2
+  - **4.3 挂账**：run_complete 载荷的 `case_content` / `commit_result` / `fs_id` 三字段与 `_FSID_STRICT_RE` 正则兜底（约 990-1030 行读取面 + `_run_complete_event()` 形参 + 44 行正则常量）——生产端已随 4.3 全删，现为纯空值传输；形状变化会同步影响前端 `types/events.ts` 与 6.1 挂账项
+  - **4.6 挂账**：该文件内 `add-case-studio-*` 内部变更名与已删组件的指名（430 / 452 / 485 行的 docstring，1369 行「case-studio skill 铁律 6」——所指 `.claude/skills/case-studio` 已随 4.6 删除）；机制本体不动，仅文本与注释层处置
+  - **深读结论 — 文件规模与骨架**：1538 行，1 个类 + 30 个函数，四段式布局
+    - 头部（1-51）：模块 docstring（Agno 事件类型 ↔ 归一化事件 schema 契约）+ `_FSID_STRICT_RE`
+    - ① 事件构造器（54-562）：`AbortMessagesCollector`（58-223）+ 22 个 `_xxx_event()` 纯函数，全部「入参 → dict」无业务分支
+    - ② 流驱动（564-1102）：`stream_agent_events`（568）· `stream_continue_agent_events`（625）· `_build_extra_run_context`（708）· `_load_boundary_run`（773）· `_close_pending_hitl_gates`（800）· `_cancel_discarded_approvals`（842）· `_drive_agent_stream`（909）
+    - ③ 中断落库（1103-1285）：`_feed_collector` · `feed_collector_from_event` · `_save_agent_session_on_abort` · `_write_abort_checkpoint`
+    - ④ 事件分派（1286-1538）：`_process_event` → `_process_event_typed`（1301）→ `_process_event_string`（1435，旧版 Agno 兜底）+ `_iter_response`
+  - **机制部分（与业务无关，KEEP）**：`AbortMessagesCollector` 与中断落库链；`_token_event` / `_reasoning_delta_event` / `_tool_start|end|error_event` / `_run_error` / `_run_started` / `_user_message` / `_compression_event` / `_generic_event`；HITL 面 `_approval_pending_event` · `_serialize_user_feedback_questions` · `_serialize_user_input_fields` · `serialize_clarification_payload` · `_clarification_request_event` · `_paused_tool_count`（审批+澄清双卡，属通用 HITL）；`_extract_usage` 与 `usage` 载荷；TPM 内容层兜底（`_detect_tpm_content_error` → raise `RuntimeError`，防会话静默标 completed）；`approval_paused` 抑制 run_complete 的终态语义；`stream_agent_events` / `stream_continue_agent_events` / `_drive_agent_stream` 的主循环；`_build_extra_run_context` / `_load_boundary_run` / `_close_pending_hitl_gates` / `_cancel_discarded_approvals`；`_process_event*` 分派体
+  - **业务分支（唯一一处，成组）**：case-refine / QAStudio 上传 provenance 面 —— 全部集中在 `_drive_agent_stream` 的 RunCompleted 段与 `_run_complete_event`
+    1. `_FSID_STRICT_RE`（44-51，8 行含注释）
+    2. `_run_complete_event` 形参 `case_content` / `commit_result` / `fs_id`（377-379）与出参三键（414-416）+ docstring（382-407）
+    3. `_drive_agent_stream` 读取面 952-1037（`run_state` 捕获 956-958 + 三字段读取 1001-1037 + 长注释 987-1000）
+    4. 调用点 1068
+  - **二者交界 — 关键发现（比挂账记录更准）**：三个「状态探测」helper 的唯一消费者就是上述业务面，无第二用途
+    - `_iter_state_candidates`（287-330，实为 44 行）· `_read_state_field`（331-339）· `_is_non_empty_str`（340-343）——全镜像仅 1005/1006/1010/1019 四处调用，均在业务面内
+    - `run_state` 局部变量（933 初始化 / 956-958 赋值）同样只喂给 `_iter_state_candidates`
+    - ⇒ 业务面删除后，这 4 项（约 57 行）立即成为同批孤儿，必须一并处置；4.6 挂账里写的「44 行正则常量」实为 `_iter_state_candidates` 的行数，`_FSID_STRICT_RE` 本体只有 8 行
+  - **业务面消费方核对（镜像内）**：后端仅 `core/stream_adapter.py` 自身（`case_content` / `commit_result` / `generated_fs_id` 全仓 30 处命中全在本文件）；前端 139 处命中分布在 `types/events.ts` · `store/sessions.ts:893` · `utils/deriveSteps.ts` · `pages/GenerateCasePage.tsx` · `components/generate-case/**` · `store/caseRefine.ts` · `api/caseVersions.ts` 等 —— 与 6.1 三张挂账表（4.1/4.3/4.6）完全重合，即**该事件契约的消费侧已被 6.1 整体挂账为「待清」**，后端先删不会造成「前端仍在消费」的悬空
+  - **非业务但需 7.6 处置的文本**：`add-case-studio spike S3` / `add-case-studio-hitl-clarify D3` / `add-case-studio-hitl-clarify`（430 / 452 / 485 行 docstring）· 1369 行「case-studio skill 铁律 6」· 235/296/302 行 `generated_fs_id` 相关解释（随业务面一并消失）；`_AIGW_TPM_*` 三处命名与 6 处 `AIGW` 文案属 7.2（模型网关命名通用化），本任务不动
+- [x] 5.2 给出两方案成本对照：整体保留（含业务分支删除清单与替换点）vs 整体 CUT
+  - **方案 A — 整体保留 + 删业务分支（推荐）**
+    - 删除清单（4 组，同批原子完成）：`_FSID_STRICT_RE` + `_run_complete_event` 三形参/三出参及其 docstring + 读取面 952-1037 + 调用点 1068；连带孤儿 `_iter_state_candidates` / `_read_state_field` / `_is_non_empty_str` / `run_state`；文本层按 7.6 清单另行处理
+    - 保留形态：`_run_complete_event(session_id, agent_name, final_response, usage=None)`，出参 `final_response` + `usage`；前端 6.1 侧同步把 `case_content` / `commit_result` / `fs_id` 从 `types/events.ts` / `store/sessions.ts` / `deriveSteps` 摘除
+    - 成本：后端 1 文件 1 批（约删 110 行、改 5 处签名/调用）；前端成本记在 6.1，本任务不追加；无新增实现、无接口语义发明
+    - 风险：低。`run_complete` 载荷变窄是**删字段**，6.1 未清完前前端读到 `undefined` —— 与现状等价（现值为恒空/恒 null），不产生新错误分支
+  - **方案 B — 整体 CUT 该文件**
+    - 成本：必须重写整个流式适配层。全镜像 4 个消费者：`api/server.py:1794`（`stream_agent_events`）· `api/server.py:1325`（`stream_continue_agent_events`）· `api/agent_os_adapter.py:54`（`AbortMessagesCollector` + `feed_collector_from_event`）· `api/approvals_routes.py:36`（`serialize_clarification_payload`）
+    - 机制不可再生：Agno 事件类型 → 归一化 dict 的映射表、中断期消息采集与 `$push` 落库、HITL 审批/澄清双卡序列化、TPM 内容兜底、`approval_paused` 抑制 —— 均为 Agno 2.6.22 适配知识，删掉等于把「能跑」这个目标本身删掉
+    - 结论：**不可行**，与 D3（机制与业务价值不可分时才 CUT）相反 —— 此处机制与业务**可分**，价值全在机制侧
+- [x] 5.3 作者拍板，结论录入本地清单
+  - 作者先要求「先给我看看业务内容再决定」→ 已逐组贴出 ① `_FSID_STRICT_RE` ② `_run_complete_event` 三形参/三出参 ③ 读取面 ④ 调用点，并说明连带孤儿（`_iter_state_candidates` 等 3 个 helper + `run_state`）与纯文本残留的边界
+  - **拍板结论：方案 A 的加强版 —— 删业务四组 + 连带孤儿**（连 `_iter_state_candidates` / `_read_state_field` / `_is_non_empty_str` / `run_state` 一并删，不留「零消费者但含通用 Agno 知识」的死代码）
+- [x] 5.4 按拍板结果执行处置
+  - 处置单文件 `core/stream_adapter.py`，**1538 → 1379 行（净删 159 行）**，8 处改动
+    - 删 `import re`（文件内唯一用途即被删正则）；typing 去掉 `Callable`（唯一用途是 `_read_state_field` 形参）
+    - 删 `_FSID_STRICT_RE`（含 4 行注释）
+    - 删 3 个孤儿 helper 与其段头注释「Session state resolution — live run state first, static agent state last」：`_iter_state_candidates`（41 行含 docstring）· `_read_state_field` · `_is_non_empty_str`
+    - `_run_complete_event` 收敛为 `(session_id, agent_name, final_response, usage=None)`，出参去掉 `case_content` / `commit_result` / `fs_id`，docstring 去掉 case-refine / QAStudio 段落，保留 `usage` 说明
+    - 删 `run_state` 初始化（含注释）· 删事件循环内「Capture live run state」捕获块
+    - 删 RunCompleted 读取面（注释 15 行 + `case_content`/`commit_result`/`fs_id` 初始化 + try/except 34 行）
+    - 调用点改 `yield _run_complete_event(session_id, agent_name, final_response, usage=last_usage)`
+  - **未动**（机制侧，逐项确认保留）：`AbortMessagesCollector` 与中断落库链 · 22 个事件构造器 · HITL 审批卡/澄清卡双路 · `_extract_usage` 与 `usage` · TPM 内容层兜底 · `approval_paused` 抑制 · 三段流驱动 · `_process_event*` 分派
+  - **未动**（转 7.6 文本层）：430 行 `add-case-studio spike S3` · 452 / 485 行 `add-case-studio-hitl-clarify` · 1369 行「case-studio skill 铁律 6」；235 行 `generated_fs_id` 解释已在 5.0→5.4 批次中随 docstring 收敛消失
+  - 验证：单文件 `py_compile` **COMPILE_OK**；全镜像 `compileall` **ALL_COMPILE_OK**；`__pycache__` 归零；按 `_FSID_STRICT_RE` / `case_content` / `commit_result` / `generated_fs_id` / `_iter_state_candidates` / `_read_state_field` / `_is_non_empty_str` 检索**零命中**（`run_state` 剩余 10 处全在 `api/agent_os_adapter.py`，是该文件自有的 `arun_kwargs["session_state"]` 局部量，与本次无关）
+- [x] 5.5 若保留：核对事件契约形状变化是否仍自洽，并确保前端事件消费侧一致
+  - 新契约：`run_complete` = `{event_type, session_id, agent_name, final_response, usage}` —— 三业务字段**由「恒空值」变为「键不存在」**（原来是 `case_content: ""` / `commit_result: None` / `fs_id: None`，现在是缺键）
+  - 后端侧自洽：全镜像已无任何 `case_content` / `commit_result` / `generated_fs_id` 读取方（4.6 / 4.3 批次已清），`run_complete` 的其余消费者只看 `final_response` / `usage`（`core/message_aggregator.py` 聚合、前端 timeline 渲染）→ 载荷变窄不破坏后端任何链路
+  - 前端侧**尚未一致**（须记入 6.1，本任务不跨批处置）：`store/sessions.ts:893` 的 `case_content: e.case_content ?? ''` / `commit_result: e.commit_result ?? null` 因 `undefined` 兜底仍得空值，行为等价；但 `utils/deriveSteps.ts` 的三态判定会退化——原设计 `fs_id === null`（新事件明确无上传）与 `fs_id === undefined`（旧回放事件 → 走 `final_response` 正则回退）二分，现在后端**永远发缺键**，全部落入 `undefined` 分支去扫 `final_response` 文本。对通用 agent 而言该分支只会判到 `complete_no_upload`（进度卡文案），不再有「权威字段」路径；`deriveSteps` 与 `components/generate-case/**` 已在 6.1 挂账为待清，故本任务仅记账
+  - 结论：**后端自洽，前端一致性由 6.1 承接**（已在该任务挂账清单中追加此条）
+
+## 6. 前端批次
+
+- [x] 6.1 前端通用层测绘：列出子域与文件清单（会话流 / 时间线 / 中断审核 / 追踪 / 系统状态 / 接口封装 / 类型 / 工具函数）
+  - 测绘基线：`mirror/qa-agent-ui/src` 共 11 个子目录（`api` `assets` `components`(16 组) `config` `hooks` `pages`(5 组) `services` `store` `stores` `types` `utils`），约 200 个源文件（含 22 个 `*.test.ts(x)`）
+  - **A. 通用层子域（机制，候选 KEEP）**
+    1. 会话流：`api/sessions.ts` · `services/streamPool.ts` · `hooks/useStream.ts` · `hooks/useRunningTaskRefreshGuard.ts`
+    2. 时间线与历史：`components/timeline/**`（14 组件 + `ThinkingBlock.test.tsx`）· `utils/turns.ts` · `utils/hydrateHistory.ts` · `utils/historyPaging.ts` · `utils/sessionStatus.ts` · `utils/exportMarkdown.ts`
+    3. 中断审核 / HITL：`components/approvals/**`（`ApprovalCard` + `ClarifyCard` + 2 测试）· `components/interrupt/**`（`InterruptCountdown` `InterruptPanel` `L2PreviewPanel` `L3ResultPanel` `ReviewGatePanel`）· `api/approvals.ts`
+    4. 追踪：`pages/TracingPage.tsx` · `components/tracing/**`（9 文件 + `grouping.test.ts`）· `api/tracing.ts`
+    5. 系统状态：`pages/SystemPage.tsx` · `components/system/**`（`ConfigCard` `HealthCard` `MCPStatusCard` `ModelSlotsCard`）
+    6. MCP 管理：`pages/McpPage.tsx` · `components/mcp/**`（7 文件）· `store/mcp.ts` · `api/mcp.ts`
+    7. 工作区：`components/workspace/**`（4 文件）· `store/workspace.ts` · `api/workspace.ts`
+    8. 会话外壳与列表：`pages/SessionPage.tsx` · `components/session/**`（12 文件 + `SessionList.pending.test.tsx`）· `components/layout/**` · `store/{app,auth,display,sidebar,sessionHistoryUi}.ts`
+    9. 接口封装：`api/{client,auth,credentials,discovery,sessionUploads,vision,workspace}.ts` · `types/{api,events}.ts`
+    10. 工具函数：`utils/{cn,apiError,agentColors,formatTokens,restoringSend,resumeSession}.ts` + 3 个同名测试 · `components/common/**` · `components/ui/**`
+  - **B. 业务子域（候选 CUT，6.3 整体处置）**
+    - 用例生成 / 精修：`pages/GenerateCasePage.tsx` · `components/generate-case/**`（17 文件）· `components/generate-refine/**` · `api/{generateCase,caseVersions,issueDesc,issueDetail,qastudioFolders,versionDataset}.ts` · `store/{generateCase,caseRefine}.ts` · `stores/generateInputStore.ts` · `utils/{parseCaseContent,genIssueIdMap,deriveSteps}.ts` + 2 测试 · `config/skillPipelineMap.ts`
+    - 评测 + feature flag：`pages/EvalPage/**`（11 文件，六 Tab + `LegacyL4Panel`/`PaginationBar`/`GeneratePlaceholder`）· `components/eval/**`（6 文件）· `api/{eval,features}.ts` · `store/{features,evalSyncStore,evalVersionCoverageStore}.ts` · `stores/{excludedDemandStore,pendingDemandStore}.ts` · `hooks/{useVersionCoverageEval,useVersionDatasetSync}.ts`
+    - 跑测：`pages/TestExecPage/**` · `components/testExec/**`（6 文件）· `store/testExec.ts` · `api/testExec.ts`
+    - 知识库：`pages/KnowledgeBasesPage.tsx` · `api/knowledgeBases.ts` · `store/knowledgeBases.ts` · `components/generate-case/KbSelect.tsx` + `kb_id` 透传面
+    - 榜单：`pages/LeaderboardPage/**` · `api/leaderboard.ts` · `assets/leaderboard/**`（4 张名次图）
+  - **C. 并行变更边界（`add-ai-coding-agent` 自有，全批不动）**：`pages/CodingPage/index.tsx` · `stores/codingStore.ts` · `config/agentIds.ts`（`CODING_AGENT_ID = 'coding-agent'`）
+    - **交叉点告警**：`components/approvals/ApprovalCard.tsx:24` 与 `store/sessions.ts:16` 均 `import { useCodingStore } from '@/stores/codingStore'` —— `ApprovalCard` 属通用 HITL 子域但持有 coding-agent 依赖，**不得**因「HITL 通用」就整文件重写；同理 `store/sessions.ts` 是会话流核心。二者处置时只删业务分支、保留 coding 依赖
+  - **D. 待 6.2 逐文件定夺的灰区（本任务只登记，不处置）**
+    - `config/skillPipelineMap.ts`：仅登记用例生成管线 skill 名（`combat-bd-testcase-gen` / `task-trigger-testcase-gen`）→ 判为业务面连带（随 `KbSelect` 摘除）
+    - `assets/{hero.png,react.svg,vite.svg}`：脚手架占位资源，非业务亦非内部事实 → 归 6.4 自查项
+    - `src/index.css.tmp`：1 行残留临时文件（内容仅 `@import "tailwindcss";`），无引用 → 归 6.4
+    - `components/common/FileUploader.tsx` · `api/sessionUploads.ts` · `api/vision.ts`：属会话上传通用能力，但 `FileUploader` 同时被 generate-case 面使用 → 6.2 需按消费者判定（不能因调用方被 CUT 而误删机制）
+    - `utils/deriveSteps.ts` + `components/generate-case/{CompactProgressCard,CurrentStepCard}`：已由 5.5 追加为**必改项**（`fsId` 三态语义塌陷），随用例生成面一并处置
+  - 测绘方式：`list_files_recursive src` 全量枚举 + 关键文件读取（`config/agentIds.ts` · `config/skillPipelineMap.ts`）；`glob_search` 在 `mirror/` 下恒空，前端文件定位一律用递归列举 / `grep_search`
+  - 已挂账待清（4.1 拍板 A 的连带残留）：知识库子域整体——`pages/KnowledgeBasesPage.tsx` · `api/knowledgeBases.ts` · `store/knowledgeBases.ts` · `components/generate-case/KbSelect.tsx` · `navRegistry.ts` 条目 · `App.tsx` 路由 · `kb_id` 透传（`MessageInputBar` / `RefineChat` / `GenerateCasePage` / `types/api.ts` / `utils/restoringSend.ts`）· `timeline/ThinkingBlock.test.tsx` 文案夹具
+  - 已挂账待清（4.3 拍板 A 的连带残留）：case-refine 面整体——`pages/GenerateCasePage.tsx`（从 timeline 抽 `case_content`、监听 `commit_result` 的 effect 与 banner）· `api/caseVersions.ts` · `store/caseRefine.ts` · `types/events.ts`（`case_content` / `commit_result` / `CaseCommitResult`）· `store/sessions.ts` 的 run_complete 透传 · 夹具 `components/generate-case/*.test.tsx` 与 `utils/deriveSteps.test.ts`。后端生产端已在 4.3 删除（仅剩 5.1 挂账的空值传输）
+  - **5.5 追加（后端契约已变，前端须同步收敛）**：5.4 已把 `run_complete` 的三业务字段从「恒空值」改为「缺键」（`store/sessions.ts:893` 的 `e.case_content ?? ''` / `e.commit_result ?? null` 兜底仍等价，可留到最后一起删）；**必改项是 `utils/deriveSteps.ts` 的 `fsId` 三态判定**——原 `null`（明确无上传）与 `undefined`（旧回放事件 → `final_response` 正则回退）二分语义已不可达，后端不再发该键，须把 `deriveSteps` / `CompactProgressCard` / `CurrentStepCard` 的上传结果分支整体删除，而非保留正则回退；连带 `types/events.ts` 的 `fs_id` / `case_content` / `commit_result` / `CaseCommitResult` 与 `NO_UPLOAD_FAILED_TEXT` 一并清
+  - 已挂账待清（4.6 拍板的连带残留）：feature-flag / 评测面整体——`api/features.ts` · `store/features.ts` · `App.tsx` 的 `loadFeatures()` · `navRegistry.ts` 的 `requiresFeature` 条目 · `components/layout/Sidebar.tsx` 的开关过滤 · `pages/EvalPage/**`（含 demands / case_records / test_points / bugs / pairs / eval_result 六个 Tab 的业务模型）。后端 `api/features.py` 与 `eval/` 包已在 4.6 CUT；前端 `getFeatures()` 的 catch 分支已降级 `DEFAULT_FEATURES`，后端缺失不崩
+- [x] 6.2 逐子域出判定表 → 拍板 → 处置 → 记账
+  - **11 个业务面判定表（依据 = 后端接口存在性）**：镜像后端对 `/test-exec/*` · `/knowledge-bases` · `/issues/*` · `/qastudio*` · `/leaderboard` · `/features` · `/eval/*` 全部**零命中** → 前端五个业务子域均为「前端独有孤儿」，非「需 REPLACE 的功能」
+    | 子域 | 前端面 | 判定 |
+    |---|---|---|
+    | 用例生成/精修 | 页面 + 18 组件 + 6 api + 2 store + 3 utils + 1 config | 纯孤儿 |
+    | 评测 + feature flag | 10 页面 + 6 组件 + 2 api + 5 store + 3 hooks | 纯孤儿 |
+    | 跑测 | 1 页面 + 6 组件 + 1 store + 1 api | 纯孤儿 |
+    | 知识库 | 1 页面 + 1 api + 1 store + `KbSelect` + `kb_id` 透传面 | 纯孤儿 |
+    | 榜单 | 1 页面 + 1 api + 4 张名次图 | 纯孤儿，且响应体含 `email` / `name` / `team_name` → 撞 6.4「无个人标识」红线 |
+  - 通用层 10 子域判定 **KEEP**（已验机制有后端支撑，非「无人引用」）：中断审核链路后端活枚举 `hooks/interrupt_manager.py:30-32`（`preview_confirm` / `result_verify` / `plan_confirm`）→ `InterruptPanel` → `L2PreviewPanel` / `L3ResultPanel` / `ReviewGatePanel` / `InterruptCountdown` 完整可达；`api/discovery.ts` 消费者 = `SystemPage` + `store/app`；`store/display.ts` → `DisplaySettingsButton`
+  - 作者拍板：**五个业务面全 CUT + 连带孤儿**
+- [x] 6.3 业务页面连同其专属组件、状态库、接口模块整体 CUT
+  - **删除 84 文件**（`src` 由 210 → 126 个 `.ts/.tsx`，含 16 个测试文件）
+    - 整目录 8 个 / 50 文件：`pages/EvalPage`(10) · `pages/LeaderboardPage`(1) · `pages/TestExecPage`(1) · `components/eval`(6) · `components/generate-case`(18) · `components/generate-refine`(4) · `components/testExec`(6) · `assets/leaderboard`(4)
+    - 独立文件 10：`pages/GenerateCasePage.tsx` · `pages/KnowledgeBasesPage.tsx` · `config/skillPipelineMap.ts` · `utils/{deriveSteps,deriveSteps.test,parseCaseContent,genIssueIdMap}` · `hooks/{useVersionCoverageEval,useVersionDatasetSync,useRunningTaskRefreshGuard}`
+    - `api/` 12：`caseVersions` `eval` `features` `generateCase` `issueDesc` `issueDetail` `knowledgeBases` `leaderboard` `qastudioFolders` `testExec` `versionDataset` + 连带孤儿 `credentials`（唯一消费者 `RedmineCookieModal` 已随目录删除）
+    - `store/` 7：`caseRefine` `evalSyncStore` `evalVersionCoverageStore` `features` `generateCase` `knowledgeBases` `testExec`；`stores/` 3：`excludedDemandStore` `pendingDemandStore` `generateInputStore`
+    - 连带孤儿 2（**本次未在挂账表中，由死代码扫描发现**）：`components/common/PromptModal.tsx` · `components/ui/ConfirmDialog.tsx` —— 全 `src` 零导入方（`InfoModal.tsx:4` 仅注释提及），按 D2 一并 CUT
+  - **修改 10 文件**（业务面摘除 + 并行变更边界保护）
+    - `App.tsx`：删 7 个业务页面 import/路由（`/generate-case` `/knowledge-bases` `/eval` `/eval/legacy-l4` `/eval/generate-placeholder` `/run` `/leaderboard`）· 删 `loadFeatures()` 调用与依赖项 · 删 `useRunningTaskRefreshGuard()` 调用与 import · 删 3 个 lazy 页面常量；**根路由 `/` 的 `Navigate` 目标由 `/generate-case` 改为 `/sessions`**（原目标已不存在）
+    - `config/navRegistry.ts`：删 `generate-case` / `knowledge-bases` / `eval` / `run` / `leaderboard` 五个 nav 项 · 删 `import type { Features }` · **删 `NavItem.requiresFeature` 与 `requiresRole` 两个字段**（唯一使用方即被删的 eval 与 leaderboard，4.6 挂账的「`requiresFeature` 条目」随之闭环）· 图标 import 收敛为 `PlusCircle, Activity, Cpu, Plug, Hammer`
+    - `components/layout/Sidebar.tsx`：删 `useFeaturesStore` import 与「按 flag/role 过滤」逻辑（`visibleNavItems` 别名一并去掉，直接 `navItems.filter`）→ 4.6 挂账的「Sidebar 开关过滤」闭环
+    - `components/session/MessageInputBar.tsx`：删 `KbSelect` import 与渲染 · 删 `kbId` state 与 2 处 `kb_id` 透传（send + restore）
+    - `store/sessions.ts`：run_complete timeline item 由 6 字段收敛为 `{type,id,final_response}`
+    - `types/events.ts`：`RunCompleteEvent` 删 `case_content` / `commit_result` / `fs_id` 三字段及 docstring（保留 `usage`）· 删 `CaseCommitResult` 接口 · `RunCompleteItem` 同步收敛
+    - `types/api.ts`：删 `CaseGenMeta` 接口 · `SendMessageRequest` 删 `case_gen_meta` / `kb_id` / `qastudio_parent_id` / `template_name` 四字段（后端零命中，纯孤儿字段）
+    - `utils/restoringSend.ts`：`ResendPayload` 删 `kb_id`
+    - `store/sessions.appendEvent.test.ts`：删 `deriveSteps` import · 删「store→derive 集成」用例 · 删整个 `run_complete fs_id 透传` 三态 describe 块（5.5 必改项落地）
+    - `FileUploader.tsx` 仅剩 2 处注释提及 `KbSelect compact` 规格 → 转 7.6
+  - **并行变更边界（逐项确认未误伤）**：`pages/CodingPage/**` · `stores/codingStore.ts` · `config/agentIds.ts` 全保留；`components/approvals/ApprovalCard.tsx:24` 与 `store/sessions.ts:16` 的 `useCodingStore` 依赖**原样保留**（只摘业务分支）
+  - 验证：`tsc --noEmit -p tsconfig.app.json` **零报错**（`noUnusedLocals` / `noUnusedParameters` 均开启，等价覆盖「删剩的悬空 import/变量」）；`vitest run` **16 files / 118 tests 全通过**（原 21 个测试文件删 5 个：generate-case 3 + `RefineChat` 1 + `deriveSteps` 1）；死代码扫描（自研脚本，见下）报告**零真实孤儿**
+  - 工具：`C:\Users\wenpengceng\AppData\Local\Temp\qaorphan.js`（扫 `src` 下所有 `.ts/.tsx` 的 import/动态 import 说明符，输出无导入方文件；脚本在仓库外，不入镜像）—— 复用命令：`node "%TEMP%\qaorphan.js" src`
+- [x] 6.4 前端镜像自查：无内部接口地址、无业务文案、无个人标识
+  - 内部接口地址：`netease` / `nie.netease` / `H73` / `h73` / `redmine` / `MBWorkbench` / `svn` / `/trunk` **全零命中**（`CurrentStepCard` / `GenerationHistory` 里的 `https://H73.qastudio.nie.netease.com` 硬编码已随目录删除）
+  - 业务文案：随 84 文件 CUT 消失；剩余业务语义仅 `FileUploader.tsx:40,333` 的 `KbSelect compact` 注释与 `utils/sessionStatus.ts:6` 的 `CompactProgressCard` 注释 → 转 7.6
+  - 个人标识：`leaderboard` 面的 `email` / `name` / `team_name` 已随页面与 `api/leaderboard.ts` 删除；`TraceRow` 显示的 operator email 来自运行时接口（非硬编码）→ 合规
+  - **7.6 挂账（本轮新增）**：`qaclient` / `QAClient` 命名与原生桥 11 处——`api/client.ts:5,6,29` · `api/sessions.test.ts:12` · `components/layout/Sidebar.tsx:15` · `components/tracing/TraceRow.tsx:19` · `index.css:14,240` · `utils/exportMarkdown.ts:119,152,160,161,163`（`window.qaclientNative.saveFile` 为功能代码，处置时须判「通用化命名」还是「CUT 原生桥」）；另 `components/common/InfoModal.tsx:4` 注释提及已删的 `PromptModal`
+
+## 7. 配置、存储、认证与模型底座通用化
+
+- [x] 7.1 依赖清单逐项核对：内部源与私有包替换为公开可得版本；无法替代者随模块一并 CUT
+  - **私有包核查 → 无**：可疑名逐一上网核对，全为 PyPI 公开包 —— `httpx2` / `httpcore2`（Pydantic 对 httpx 的维护 fork，PyPI 有正式页）· `griffelib`（griffe 2.0 拆分出的核心库，原 `griffe` 变为元包）· `agnoctl`（Agno 官方 CLI）· `uncalled-for` · `fastmcp-slim` · `mcp-types` · `py-key-value-aio`；`requirements.txt` 内**无内部 index 引用**（无 `--index-url` / `--extra-index-url` / `--find-links`）
+  - **代码 import ↔ 声明比对**（123 个 `.py` 全量提取顶层 import，69 个模块）：三方模块 25 个，逐一对齐 `pyproject.dependencies`
+    - **缺口 1（补）**：`pywin32`（`win32crypt`）被 `core/dpapi.py:54,82` 导入，**两份清单都没声明**；调用链 `api/server.py:103 → core/llm_key_loader.resolve_token → core.dpapi.decrypt` 是活链 → 声明为可选依赖 `[project.optional-dependencies] windows = ["pywin32>=306; sys_platform == 'win32'"]`，`requirements.txt` 同步补同款带 marker 行（Linux 上被 marker 排除，不污染部署）
+    - **缺口 2（补）**：`aiosqlite` —— `core/storage.py:211` 的 `agno.db.sqlite.SqliteDb` 路径需要它，且 `STORAGE_BACKEND=sqlite` 是 `core/config.py` 的一等配置项、也是 mongo/postgres 驱动缺失时的最终回退；此前两份清单均无 → 新增可选依赖 `sqlite = ["aiosqlite>=0.20"]`
+    - **`sqlalchemy`（推翻初判，改为 KEEP 并加注释）**：全仓零 `import sqlalchemy` 曾判为「未用声明」，但核对 agno 2.6.22 的 PyPI 元数据后确认 `sqlalchemy` 是 `agno[os]` / `agno[sqlite]` 的传递依赖，而本仓**确实使用**这两条路径：`api/agent_os_adapter.py:35` 与 `api/approvals_routes.py:29` 导入 `agno.os.utils.format_sse_event`、`core/storage.py:211` 导入 `agno.db.sqlite.SqliteDb` → 保留声明并把理由写进注释（教训：transitive 依赖不能只按「本仓 import」判「未用」）
+    - **`openpyxl`（改可选）**：`tools/file_tools.py:205` 在 try/except 内（缺失时返回明确错误串，`file_tools.py:208`）→ 由硬依赖改为可选 extra `xlsx = ["openpyxl>=3.1"]`；`requirements.txt` 保留 pin（冻结快照语义）
+    - 其余零命中项（`pandas` · `uvloop` · `croniter` · `pytz` · `httpx2`/`httpcore2` 等）为 `pip freeze` 抓到的传递依赖或平台专属 wheel → 不动，改由文件头定位说明覆盖
+  - **内部约束 pin 放宽（D14）**：`pymongo>=4.8,<4.9` + `motor>=3.5,<3.6` 的原注释理由是「pin 到目标 MongoDB 服务接受的 wire-protocol 版本」= 内部部署事实 → 改为 `pymongo>=4.6` / `motor>=3.5`，注释重写为中性的「Agno MongoDb 适配器 + Beanie 需要这对同步/异步驱动」。放宽的正确性已核：本仓用的是 `agno[mongodb]`（同步）extra（其声明为 `pymongo[srv]`，无 `>=4.9` 约束），**未**安装 `agno[async-mongo]`（该 extra 才要求 `pymongo>=4.9`）→ 公开环境下 `pymongo>=4.6` 与所选适配器无冲突
+  - **`requirements.txt` 定位说明（新增文件头）**：明确其为 `pip freeze` **冻结快照**而非最小依赖清单（含 Agno/FastAPI/MCP 的传递 pin 与 Linux 专属 wheel 如 uvloop），`pyproject.toml` 才是直接依赖范围的唯一来源 → 避免后来者误以为「删掉 freeze 里没被 import 的行」是安全的
+  - 验证：`pyproject.toml` 经 `tomllib` 解析通过（21 个直接依赖 + 5 个 optional extra：`dev` / `xlsx` / `windows` / `sqlite` / `postgres`）；`requirements.txt` 130 行全部经 `packaging.requirements.Requirement` 解析通过（含带 env marker 的 `pywin32>=306; sys_platform == "win32"`）；冻结 pin 与放宽后的范围自洽（`pymongo==4.8.0` ≥ `>=4.6`、`motor==3.5.3` ≥ `>=3.5`、`beanie==1.30.0` ≥ `>=1.26`）；无 `.py` 改动 → 未触发编译校验
+  - **转 7.8 / 7.9**：`qa_agent.spec:6` 的 `hiddenimports` 仍含 `sqlalchemy`（KEEP，与上一致）与 `cryptography` / `itsdangerous`（两者无本仓 import，属 fastapi/starlette 传递项，一并复核）；`pyproject.toml` 的 `[tool.pytest.ini_options] testpaths = ["tests"]` 指向镜像内**不存在**的 `tests/`（4.7 已确认被 `.gitignore` 排除）→ 7.9 写启动说明时须说明「镜像不含测试目录，pytest 入口为空」
+  - **转 8.x**：SQLite 回退路径（`STORAGE_BACKEND=sqlite`）尚未在补齐 `aiosqlite` 后实跑验证 → 8.x 验证项；`agno` 侧 `croniter` / `pytz`（`agno[scheduler]` extra）本仓未使用，不声明
+- [x] 7.2 模型底座（`REPLACE`）：改用公开供应商的 OpenAI 兼容客户端（不留内部网关名、地址或协议分支）
+  - **作者拍板**：模型底座走 OpenAI 协议 + DeepSeek 官方接口；`LLM_MODEL` 默认取 `deepseek-flash`（作者选定，备选 `deepseek-v4-pro`）；密钥落 `mirror/qa-agent/.env`，`LLM_API_KEY` 留占位由作者本地填（密钥不进源码、不进对话记录）
+  - **先决事实**：镜像内**没有任何硬编码的内部网关地址** —— `llm_base_url` 原本就是通用 `https://api.openai.com/v1`（`core/config.py:74`）。本任务的实体工作量 = 去网关名 + 换默认厂商 + 落 `.env`
+  - **去内部网关名（`AIGW` 全库 → 0 命中）**：
+    - `core/models.py`：类 `AIGWModel` → `OpenAICompatModel`（12 处引用同步）；模块 docstring 删掉「for compatibility with 网易 AIGW, which proxies various models」改为中性描述（指向任意 OpenAI chat-completions 端点）
+    - `core/rate_limiter.py`：`_AIGW_TPM_CONTENT_INDICATORS` → `_TPM_CONTENT_INDICATORS`、`_AIGW_TPM_CONTENT_MIN_HITS` → `_TPM_CONTENT_MIN_HITS`（含函数体内 2 处引用）
+    - `core/model_slots.py`（4 处）· `core/stream_adapter.py`（5 处）· `core/vision_client.py` · `hooks/serial_tool_lock_hook.py`：注释统一改为「上游 / provider / 上游网关」中性表述
+    - 内部模型别名清除：`ModelSlot.VISION` docstring 与 `core/config.py` 示例里的 `claudecode-opus-4-6` / `minimax-m3` / `deepseek-v4-flash-vision-exp` / `qwen-2.5-72b`；`llm_vision_models` 默认由内部别名列表改为**空**（空集 = 前端图片上传门控关闭，由部署方显式 opt-in）
+    - 连带修正描述错误：`api/schemas.py` 的 `model_slots` 说明列了不存在的 `scout` 槽（`ModelSlot` 实为 default/orchestrate/reason/vision）→ 改为真实槽名
+    - 前端测试夹具 2 处 `AIGW` 文案同步改为「上游」
+    - 复核：`AIGW|aigw|网易|claudecode|minimax|glm-|qwen` 全镜像（含 `README` / `DEPLOYMENT.md` / `docker-compose.yml` / `api/schemas.py`）**零命中**
+  - **删未用导入（D2 减法）**：`core/stream_adapter.py:36-37` 导入 `_AIGW_TPM_CONTENT_INDICATORS` / `_AIGW_TPM_CONTENT_MIN_HITS` 却**零使用**（实际只用 `_detect_tpm_content_error`）→ 随改名一并删除，import 收敛为单行
+  - **默认值换厂商**：`core/config.py` `llm_base_url` → `https://api.deepseek.com`、`llm_model` → `deepseek-flash`；`.env.example` L10-12、`docker-compose.yml` L9-11（含 `${LLM_MODEL:-...}` 兜底）、`DEPLOYMENT.md` LLM 配置表同步
+  - **`reasoning_content` 回传分支 KEEP（已核官方文档，非猜测）**：`core/models.py` 对 `deepseek-*` 前缀回传 `reasoning_content` 的逻辑**必须保留** —— DeepSeek 官方 thinking-mode 指南同样要求回传，否则 400 `The reasoning_content in the thinking mode must be passed back`。前缀判定对官方模型名继续成立（`deepseek-flash` / `deepseek-v4-pro` 均以 `deepseek-` 开头），判定无需修改
+  - **`.env` 落盘**：由 `.env.example` 生成 `mirror/qa-agent/.env`，填好 `LLM_BASE_URL` / `LLM_MODEL`，`SESSION_SECRET_KEY` 写入 `secrets.token_urlsafe(32)` 生成的本地值，`LLM_API_KEY` 保留占位待作者填；ignore 校验：`.env` 与 `.env.example` 当前均被 `mirror/` 整目录规则忽略，unveil（删该行）后由**仓库根 `.gitignore` 的 `.env` / `.env.*` + `!.env.example`** 接管（无斜杠模式 → 任意深度匹配）→ `.env` 仍被排除、`.env.example` 仍随源码发布
+  - **连带 embedding 隐患（已写进 `.env.example` 与 `DEPLOYMENT.md`）**：`embedding_base_url_resolved` 会回退到 `llm_base_url`，而 DeepSeek 聊天端点**没有** `/embeddings` → 启用 Milvus 长期记忆时 `EMBEDDING_BASE_URL` 实际是必填，否则记忆写入失败
+  - `gpt-4o` 唯一保留点 `core/context_usage.py:342`：它是 agno `count_tokens` 的 **tiktoken 编码提示**（非模型选择；未知 id 也回退到 o200k_base 系列），已补注释说明语义，避免后来者误当模型事实删掉
+  - 验证：`python -c` 实测 `QAAgentSettings` 从新建 `.env` 加载 → `BASE=https://api.deepseek.com` / `MODEL=deepseek-flash` / `SECRET_LEN=43` / `VISION_SET=set()` / `AVAIL=['deepseek-flash']`；`compileall` 全树 `ALL_COMPILE_OK` + `__pycache__` 清零；前端 `tsc --noEmit` 零错 + `vitest run` 16 文件 / 118 用例全通过
+  - **未覆盖 → 8.x**：本机 Python **未安装 `agno`**（`ModuleNotFoundError: No module named 'agno'`）→「`resolve(ModelSlot.DEFAULT)` 能构造出 `OpenAICompatModel`」只做了编译/改名一致性校验，真机实例化与联网调用移 8.x
+  - **归 7.4**：`core/llm_key_loader.py` + `api/server.py:101-111` 的 DPAPI 取 token 链是**第二个**密钥来源（Windows 专属，仅在 `QA_AGENT_CONFIG_PATH` 非空时激活）→ 本次未动，随设备平台引用点一并处置
+- [x] 7.3 内部存储（`REPLACE`）：连接串取自环境变量并默认指向本地；跨库的内部共享库引用删除（已确认零调用方）
+  - **先决事实**：镜像内**零内部主机名** —— `core/config.py` 的 `mongo_uri` 早前已改为 `mongodb://localhost:27017/`、`storage_dsn` 为 `postgresql://qa_agent:qa_agent_dev@localhost:5432/qa_agent`、`milvus_host/port` 为 `localhost:19530`；全镜像按 `mongodb://` / `postgresql://` / `redis` / `kafka` / `192.168.` / `10.x` / `172.16-31.x` / `.local` 检索 → **仅 1 处误报**（`qa-agent-ui/package-lock.json` 的 `undici: ^7.25.0` 版本号）。故「连接串取自 env 并默认指向本地」**本就成立**，本任务实体工作量集中在跨库共享库的 CUT
+  - **CUT 员工目录跨库面（内部人员白名单共享库）**：该面唯一入口 `auth/service.py:15 verify_employee` 经全镜像检索**零调用方**（仅自身定义），确认为死面后整面删除：
+    - `auth/service.py`：删 `verify_employee`（17 行）
+    - `db/models.py`：删 `EmployeeDirectory` 文档模型 + 其段头注释；模块 docstring 由「Databases: qa_agent_db → … / employee directory → EmployeeDirectory（database name is configurable）」改为「All collections live in the single qa_agent_db database.」
+    - `db/mongo.py`：删 import 表中的 `EmployeeDirectory`；删 `init_db` 内「第二数据库（只读员工目录）」整段 `init_beanie` 注册及其 `auth_directory_db` 未设分支
+    - `core/config.py`：删 `auth_directory_db` 字段（其语义就是内部白名单库名，同时是 D14 清理项）
+    - `.env.example`：删 `AUTH_DIRECTORY_DB` 段（4 行注释 + 1 行赋值）
+    - 连带孤儿同步 CUT：`db/mongo.py:108 get_motor_db_by_name`（唯一用途 = 跨库读，**零调用方**）
+    - 复核：全镜像按 `auth_directory_db` / `AUTH_DIRECTORY_DB` / `EmployeeDirectory` / `employee` / `verify_employee` / `get_motor_db_by_name` 检索 → **零命中**
+  - **内部部署事实文案清除**：`db/mongo.py` 模块 docstring 的「Both database names come from this module and **are deployment facts** — see the auth boundary note on `init_db`」→ 改为「The server location comes from the `MONGO_URI` environment variable; no host or database other than qa_agent_db is assumed」（新措辞不含 `employee`）；`db/models.py` 的「ops flips role=internal via DB」与「role (internal/normal binary, ops-managed)」→ 改为「the role is operator-managed and never set from the UI」/「role (operator-managed label)」。`AgentUser.role` 字段本身保留：它是本系统自管的用户标签而非内部事实，且 `auth/dependencies.py:9` 明示「There is no role model」
+  - **顺手消除 import 期快照**：`db/mongo.py` 的模块级 `MONGO_URI = settings.mongo_uri` 在 import 时取值（7.2 已发现 `api/server.py:106` 会**运行时改** `settings.llm_api_key`，同一模式对 `mongo_uri` 属潜在陷阱）→ 删该常量，`AsyncIOMotorClient` 改为调用时读 `settings.mongo_uri`（复核该常量无任何外部导入方）
+  - **内网地址落位（作者拍板：保持 mongo 默认 + 先用内网库跑通前后端，之后再换库）**：内网 `MONGO_URI` **只写进 `mirror/qa-agent/.env`（作者自填）**，源码 / `.env.example` / `docker-compose.yml` / `DEPLOYMENT.md` 一律保持 `localhost`；复核内网 IP 全镜像**零命中**（仅 `.env` 内有，被 `.gitignore` 的 `mirror/` 与 `.env` 双重排除）
+  - **默认值分歧（登记，未改）**：`core/config.py` 的 `milvus_enabled` 代码默认 `True`，而 `.env.example` 与作者 `.env` 均为 `false` → 无 `.env` 裸跑时会先尝试连 Milvus 再优雅降级，语义不一致 → 转 7.6 统一
+  - 验证：`core/config.py` 实测加载 → `MONGO_URI` 取自 `.env`、`HAS_AUTH_DIR_FIELD=False`（字段确已删除）、`MILVUS=localhost 19530 False`；改动 6 个 `.py` 经 `py_compile` 通过；全量 `compileall` **ALL_COMPILE_OK**；`__pycache__` 归零
+  - **归 7.4（设备平台第二配置源，此处未动）**：`core/local_config.py`（`%APPDATA%/qa-agent/config.json`）+ 读取方 `api/server.py:2443-2456`（`milvus_enabled` 覆写）、`memory/knowledge_hub.py:944-951`（同）、`core/llm_key_loader.py:27`（`personal_llm_token`）+ `api/server.py:101-111`（DPAPI 取 token）。登记两个死点：① `local_config.write_config` **零调用方**；② 模块 docstring 声称存 `mongo_uri` / `milvus_host` / `milvus_port`，实际**无任何读取方**（三处 `read_config()` 只取 `milvus_enabled` 与 `personal_llm_token`）→ 陈旧描述
+- [x] 7.4 内部协作系统、设备平台的引用点逐条处置（替换或随调用方 CUT）
+  - **总判据**：`sys.platform == "win32"` / CMD-PowerShell 语法处理属**通用跨平台支持**（`main.py:25` 控制台编码、`tools/bash_tool.py` 5 处、`tools/wait_tool.py`、`tools/background_tasks.py`、`skills/expander.py`、`tools/file_tools.py` 的 `Get-Content` 提示）→ 一律 **KEEP**；「设备平台」只按**桌面壳（QAClient WebView / QWebChannel 桥）**这一面处置
+  - **关键发现：两个设备平台面在镜像内都是死面**（写入侧 / 注入侧都不存在），故都以 CUT 为主
+  - **CUT 前端桌面原生桥（作者拍板）**：`window.qaclientNative.saveFile` 的注入方 `gui/qa_agent_panel.py::_inject_native_bridge()` **镜像内不存在**（无 `gui/` 目录、无 `qa_agent_panel.py`）→ 分支永不触发，整段删除：
+    - `src/utils/exportMarkdown.ts`：删 `QaclientNativeBridge` 接口 + `declare global` + Path 1 原生桥分支（63 行）；`DownloadResult` 由 `{ok, path?, cancelled?, native?, error?}` 收敛为 `{ok, error?}`；docstring 由「Two execution paths」改为单一浏览器下载；末尾 `return { ok: true, native: false }` → `{ ok: true }`
+    - `src/components/timeline/AgentMessageBubble.tsx` 与 `UserMessageBubble.tsx`：各删一段 `if (result.native && result.path)` 的「文件已保存到以下路径」路径 toast，只留「下载已开始 / 下载失败」两条（消掉一层嵌套）
+  - **GENERICIZE 设备平台文案（6 文件，纯文案，无逻辑改动）**：`src/api/client.ts`（2 处「QAClient WebView」→「桌面壳/独立客户端」）· `src/api/sessions.test.ts`（用例名「QAClient 打包场景」→「桌面打包场景」）· `src/components/layout/Sidebar.tsx`（「桌面 QAClient WebView」→「部分桌面 WebView」）· `src/components/tracing/TraceRow.tsx`（「QAClient passes the logged-in user's email」→ 泛化为「以 email 认证的调用方」）· `src/index.css`（「QAClient-aligned light theme」/「QAClient Light Alignment」→ 去前缀）· `vite.config.ts`（2 处「QAClient WebView」/「QAClient QWebEngineView」→「桌面壳/独立客户端」「桌面 WebView 壳」）
+  - **后端设备平台文案与陈旧引用**：`api/server.py:391`（「QAClient-injected version」→「configured/packaged version」）· `api/server.py:2481`（`/api/idle` docstring 的「Consumed by QAClient before launching the auto-update updater」→「polled by a supervisor (deploy/update script or desktop shell)」）· `api/server.py:2710`（SPA 静态托管注释「so the QAClient WebView can load …」→「so a single process can serve both the API and the UI」）· `mcp_service/manager.py:415`（「(qaclient, etc.)」→「existing bridge configs」）· `tools/lazy_mcp_tool.py`（删「This file is consumed by: `agents/builtin/env_ensure_agent.py`(qaclient MCP) / `agents/builtin/test_runner_agent.py`(game_debug_mcp)」——**两个文件镜像内均不存在**，`agents/builtin/` 只剩 `coding_agent.py` / `general_agent.py` → 改为描述真实消费方 `mcp_service/manager.py`）
+  - **KEEP 说明（机制通用，只改文案）**：`api/server.py` 的 SPA 静态托管（单进程同时服务 API + UI，WebView 只是消费者之一）· `/api/idle` 空闲探测端点 · `api/system.py` 的 tkinter + PowerShell 目录选择器（前端 `WorkspacePanel.tsx:119` **活调用**，属通用桌面便利）· `main.py` win32 控制台编码修复 · `qa_agent.spec`（PyInstaller 通用打包，无 qaclient 引用）
+  - **CUT 整个本地配置 / DPAPI 面（作者拍板；写侧已死）** —— 论证：`core/local_config.py` 的 `write_config` **零调用方**，且 `personal_llm_token` 全库**只读不写**（`llm_key_loader.py` 3 处读、零处写）→ `resolve_token()` **恒返回 None**，整条链永不生效：
+    - 先改读取点（D13 顺序：依赖方先动）：`api/server.py` 删 lifespan 内「0.1. Load LLM token from local config」整段（11 行，含 `_cfg.qa_agent_config_path` 门控）；`api/server.py` 的 `/health` 与 `memory/knowledge_hub.py:942-953` 由「优先读本地 config.json、回退 settings」改为**直读 `settings.milvus_enabled`**
+    - 再删模块：`core/llm_key_loader.py` · `core/dpapi.py` · `core/local_config.py`（三文件整体删除）
+    - 连带清理：`core/config.py` 删 `qa_agent_config_path` 字段（其唯一消费者就是被删的两处）；`pyproject.toml` 删 `windows` extra、`requirements.txt` 删 `pywin32` 行（**复核：全库已零 `import win32*`**，仅剩 `sys.platform == "win32"` 判断走 stdlib；新增 extra 数 5 → 4：`dev` / `xlsx` / `sqlite` / `postgres`）
+    - **过程纠错**：删 extra 时我一度给它编了个理由（「bash_tool.py 用 pywin32 的 win32process 杀进程树」），随即 grep 证实**无此 import** → 改为整体删除而非保留，避免把不实理由写进公开源码
+    - 复核：全镜像按 `QA_AGENT_CONFIG_PATH|qa_agent_config_path|local_config|llm_key_loader|dpapi|DPAPI|pywin32|qaclient|QAClient|qaclientNative` 检索 → **零命中**
+  - **密钥来源收敛（合 D15）**：LLM 密钥此后**唯一来源 = `.env` 的 `LLM_API_KEY`**（7.2 已落），删除 Windows DPAPI 第二来源后不再存在「两条密钥路径」，也消掉了桌面壳依赖
+  - 验证：`compileall` 全树 **ALL_COMPILE_OK** + `__pycache__` 归零；`pyproject.toml` 经 `tomllib` 解析（4 extras / 21 deps）；`requirements.txt` 经 `packaging.requirements.Requirement` 解析通过；前端 `tsc --noEmit` **零错**（`noUnusedLocals` 开）+ `vitest run` **16 文件 / 118 用例全通过**
+  - **登记 → 8.x 孤儿扫描**：`tools/lazy_mcp_tool.py` 的 `lazy_mcp_tool_by_name` / `lazy_mcp_tools_for` 经全镜像检索**无外部调用方**（模块外只被 `mcp_service/manager.py:88` 导入 `MCPConnectionError`）→ 属更大范围的孤儿问题，不在 7.4 内处置
+  - **登记 → 7.6 待判**：`AgentOS` 命名面仍在（`api/agent_os_adapter.py`、`.env.example` 的 `AGENT_OS_USER_ID_PREFIX`「the upstream AgentOS platform」、`TraceRow.tsx` 注释）。需与作者确认它是 Agno 框架自带的公开组件（KEEP）还是上游内部平台（REPLACE）——本轮未动
+- [x] 7.5 会话签名密钥：去掉默认值，缺失时拒绝启动（D15，认证替换的前置条件）
+  - **先决事实：本任务主体（会话签名密钥）在 3.x 已落地，本轮为验证 + 补齐同族缺口**
+  - **会话签名密钥（已合规，实测确认）**：`core/config.py` 字段 `default=""` + `@field_validator("session_secret_key")` `_require_session_secret_key`（拒空/纯空格，报错文案含生成命令）。实测（脚本 `%TEMP%/qa_secret_check.py`，`_env_file=None` 显式构造）→ `session_secret_key=""` → **`ValidationError`**、`"   "` → **`ValidationError`**、带 `.env` 正常构造 → OK（len=43）。**注**：cmd 下 `set SESSION_SECRET_KEY=` 是「删除变量」而非「设为空」，用那种方式测会得到假阴性——故改用 Python 层构造验证
+  - **发现 1：前端等待的 409 契约后端并不存在（死契约）** —— `qa-agent-ui/src/api/client.ts:47-49` 判 `data.code === 409 && data.error === 'LLM_NOT_CONFIGURED'` 并 `dispatchEvent('llm-not-configured')`；但全后端（含 `api/`）按 `LLM_NOT_CONFIGURED` 检索**零命中**，且该自定义事件**无任何监听方** → 分支永不触发、UX 缺失。更糟的是 `core/model_slots.py` 与 `core/models.py` 在密钥缺失时**伪造 `"not-provided"` 作为 api_key 发出去** → 用户看到的是供应商 401，不是「未配置密钥」
+  - **处置（作者拍板：后端补校验，让契约复活；校验放请求层，保启动可用性）**：
+    - 新增中性错误模块 `core/errors.py`（放 `LLMNotConfiguredError`）：**放 core 而非 api 的关键理由**——`core/models.py` 需要在构建期抛同一异常，若异常定义在 `api/server.py` 会形成 core→api 反向依赖/循环
+    - `api/server.py`：改为 `from core.errors import LLMNotConfiguredError`，新增 `require_llm_configured()`（空 key → 抛异常）与 `@app.exception_handler(LLMNotConfiguredError)`，响应体为**前端已实现的扁平形状** `{"code": 409, "error": "LLM_NOT_CONFIGURED", "message": ...}`（非 FastAPI 默认的 `{"detail": ...}`，否则 `data.code` 取不到）
+    - 请求入口加校验（**3 处，均为真正触达模型的入口**）：`POST /sessions/{id}/messages`（主路径）· `POST /sessions/{id}/turns/regenerate` · `api/agent_os_adapter.py` 的 `POST /agents/{id}/runs` 与 continue-run（后者用**函数内 import**，因 `api/server.py:460` 反向 import 本模块，模块级 import 会循环）
+    - **构建期兜底**：`core/models.py::build_model_from_slot_config` 在 `slot_config.api_key` 为空时 `raise LLMNotConfiguredError`，并把 `api_key=slot_config.api_key or "not-provided"` 的伪 key 去掉；`core/model_slots.py` 的 `api_key=settings.llm_api_key or "not-provided"` 同步改为直传（**两处伪 key 全清**）。这样即便某条路径绕过了请求层校验（如 `POST /sessions` 触发 agent 构建），也由 exception handler 统一转 409 而**不是 500**
+    - **明确未加强校验的位置（有意为之）**：`POST /sessions/{id}/resume` —— 其 `review_approved` 分支只做 interrupt 解析、**不触达模型**，`user_resume` 分支仅返回并把消息交给 `/messages`（该端点已校验）→ 在此加门会错误阻断纯审批动作
+  - **发现 2：`STORAGE_DSN` 默认值内嵌口令字面量** —— 默认值原为 `postgresql://qa_agent:qa_agent_dev@localhost:5432/qa_agent`（本地开发占位，非真实凭证）。**处置（作者拍板：去默认口令 + 缺失时报明确错误）**：`core/config.py` 默认值改空 + 说明「即便 dev 口令也不应随源码分发（避免被真实部署复用）」；`core/storage.py` 的 PostgreSQL 分支加前置校验，DSN 为空时 `raise RuntimeError`（明确指引去 `.env` 配置），不再静默用未知 DSN 建连；`.env.example` 与 `DEPLOYMENT.md` 同步改为 `postgresql://USER:PASSWORD@localhost:5432/qa_agent` 占位并把「必填」写明
+  - **KEEP**：`docker-compose.yml` 的 `POSTGRES_PASSWORD:-qaagent_secret` 与配套 `${STORAGE_DSN:-...}` —— compose 本地栈**自身一致地**同时设置密码与 DSN，属自洽的本地开发栈默认，非对外发布的凭证位（如不同意可单独提出）
+  - 验证：`core.errors.LLMNotConfiguredError` 默认文案 len=101、自定义文案透传；`ModelSlotRegistry` 在空 key 下**构造不抛**（启动可用性保住）、`SlotConfig.api_key` 保持 `''` 不再被伪造成 `"not-provided"`；`QAAgentSettings(_env_file=None).storage_dsn == ''`、postgres + 空 DSN → **`RuntimeError` OK**；`compileall` 全树 **ALL_COMPILE_OK** + `__pycache__` 归零；`.env` 实测仍可正常加载（SECRET len=43，DSN 取 `.env` 旧值——mongo 后端下不生效，无影响）
+  - **登记 → 7.8/7.9 新发现（打包缺口，本轮未动）**：`pyproject.toml` 的 `[tool.setuptools.packages.find] include = ["qa_agent*"]` 与真实目录结构**不匹配** —— 顶层包是 `agents`/`api`/`auth`/`coordinator`/`core`/`db`/`hooks`/`mcp_service`/`memory`/`skills`/`tools`，**不存在 `qa_agent` 目录** → 该 find 规则匹配为空，`pip install .`（非 editable）会装不进任何代码。影响 `mirror/README.md` 的安装步骤与 PyInstaller 之外的部署方式，须在 7.8/7.9 一并定夺
+- [x] 7.6 配置通用化：全部经环境变量注入，示例配置值全为占位（D14）
+  - **4.6 挂账（文本清理清单）**：`core/agno_approval_patch.py`（`fix-case-studio-multi-approval` · 「脚本工坊四道审批门」）· `core/reject_note.py`（`specs/case-studio-approvals` 路径）· `core/storage.py`（`add-case-studio S2` · 「工坊审批门」）· `core/run_lifecycle.py`（「workflow path」）· `api/agent_os_adapter.py:145` · `core/context_usage.py:49` · `tools/wait_tool.py`（`qa-auto workflow` 2 处）· `api/server.py:826`（`try_set_running` 调用方枚举里的 `case-studio`）· `api/server.py:1848`（「工坊 run 暂停」）；另 `agents/builtin/coding_agent.py:6` 与 `tools/coding_tools.py:40-41` 的工坊对比说明属并行变更自有内容，对照时不要误改
+  - **4.7 挂账（已作废）**：`qa-agent-ui/src/components/generate-case/PreAnalysisPreviewModal.tsx:5` 的「范式参照 DocsPage」注释——该文件已随 6.3 **整目录 CUT**，项作废
+  - **先决核查（7.6 本体）**：`core/config.py` 全部字段均为 `Field(default=...)` 或 env 注入，**无任何硬编码内部事实**；`.env.example` 全占位（`sk-your-api-key-here` / `mongodb://localhost:27017/` / `postgresql://USER:PASSWORD@...`）。本任务实体工作量在「文本清零」与「默认值自洽」两块
+  - **本轮范围扩大的原因**：接手时挂账仅 4.6/4.7/6.4 三张清单（约 20 处），全量扫描实际扫出 **≈90 处**内部出处与内部平台事实。作者逐类拍板（5 次），范围严格按拍板结果执行，未擅自扩大
+  - **类 1（内部项目/平台事实；拍板：文案全清零 + CUT 两个死文件 + 删 `deploy.sh` SVN 检查）**：
+    - 整文件 CUT **2 个（先验证零引用再删）**：`tools/server_ready_tool.py`（`wait_for_server_ready` —— MBWorkbench CLI + 内部 8 份 `game*.log` + `ALL_SUCCESSFUL` 标记；按 `server_ready` / `wait_for_server_ready` 检索**仅自引用**）· `hooks/per_agent_serial_tool_lock_hook.py`（按 `per_agent_serial_tool_lock` 检索仅自引用；docstring 依存 `game_debug_mcp` / `svn_info` / `snapshot_replay` 与已删的评测 agent）。删除后复检两符号**零命中**
+    - `H73` 全清（8 处）：`README.md:3`（「面向 H73 项目 QA 团队」→「面向 QA 团队」）· `agents/builtin/general_agent.py:16`（提示词「H73 项目的通用智能助手」→「通用智能助手」）· docstring 7 处（`agents/base.py` · `coordinator/coordinator_agent.py` · `coordinator/team_builder.py` ×4 · `core/engine.py`）「H73 game version …」→「Game version …」
+    - `Hunter2` / `hunter_execute` 全清（4 处）：`README.md:34`（`hunter_execute_tool.py` —— **该文件镜像内不存在**，删行并把树形末项 `├──` 改 `└──`）· `general_agent.py:29`（Skill 触发清单删「Hunter2 远端脚本推送」项）· `components/timeline/ToolCallCard.tsx:16`（删 `hunter_execute: '🎯'` 图标映射——后端零该工具）· `tools/task_tools.py:45,49`（`CREATE_JSON_EXAMPLE` 里「execute via Hunter」→「execute the script」）
+    - `MBWorkbench` / `mbw` 全清（3 处）：`tools/wait_tool.py:91-94`（示例命令 `"qa_agent.exe" --run-script "mbw-cli.py" logs GameServer --grep "ALL_SUCCESSFUL"` → 通用示例 `"app.exe" --run-script "script.py" input.txt --grep "MARKER"`）· 余下随 `server_ready_tool.py` 一并消失
+    - `game_debug_mcp` 示例名中性化（4 处）：`hooks/serial_tool_lock_hook.py:39` · `mcp_service/loader.py:43-52`（示例改 `my_stdio_server` / `my_mcp_server` / `my_sse_server`）· `tools/lazy_mcp_tool.py:242`（并删同句里已不存在的 `TestRunnerAgent` 指代）· `tools/registry.py:85`（`mcp_my_server`）
+    - `deploy.sh`：删 `check_svn()` 函数定义 + 2 个调用点（`do_install` / `do_check`）；删后按 `svn|check_svn` 检索**零命中**
+  - **类 2（内部出处路径 ≈60 处；拍板：删路径指向、保留技术理由原句）**：
+    - 后端 `openspec/changes|specs/<内部变更名>` **39 处 / 20 文件**：`api/server.py`(8) · `api/session_uploads.py`(6) · `api/schemas.py`(4) · `api/agent_os_adapter.py`(3) · `api/session_manager.py`(3) · `core/storage_reader.py`(3) · `memory/knowledge_hub.py`(2) · `tools/bash_tool.py`(2) · `tools/file_tools.py`(2) · `api/approvals_routes.py` · `api/vision.py` · `core/config.py` · `core/partial_run_persist.py` · `core/session_state.py` · `core/stream_adapter.py` · `core/vision_client.py`
+    - 内部文档路径 `docs/0x-*.md §x` **8 处**：`core/prompts.py:9` · `agents/base.py:211`（`docs/llm-cache-optimization.md`）· `tools/{background_tasks,bash_classifier,bash_tool(×2),file_state_cache,file_tools}.py`
+    - 前端 `openspec` **14 处 / 10 文件**：`src/api/{sessionUploads,vision}.ts` · `components/common/FileUploader.tsx`(3) · `components/mcp/form-fields.tsx` · `components/session/MessageInputBar.tsx` · `services/streamPool.ts` · `store/{sessionHistoryUi,sessions(×2)}.ts` · `utils/exportMarkdown.ts` · `vitest.config.ts` · `AGENTS.md:23-24`；另 `deploy/docker-compose.yml:3` 与 `deploy/nginx.conf:8`（顺带删该文件里 `/workflows/ws` 代理路径注释——工作流层 4.5 已 CUT）
+    - **执行方式**：`%TEMP%\qa_strip_refs.py`（固定映射表 + **每对断言「恰好命中一次」**，命中 0 次或多于 1 次即报错且不改）→ 首轮 `applied files=28 replacements=52`、`problems=1`（`src/api/vision.ts` 未命中：该文件用 ` */` 收尾而非 `"""`，已手工补 1 处）
+    - 保留原则：技术理由原句一律保留（如「truncate 幂等协议」改写成完整句）；`Claude Code` 作为**公开产品**的设计参照名保留，只删其后紧随的内部文档路径；并**连带清掉只对缺失文档有意义的决策编号**（`D13` / `D14` / `D2` / `D4` 等）
+  - **类 3（默认值自洽；拍板：代码默认改 false）**：`core/config.py` `milvus_enabled` `True` → `False` + 注释「默认关闭 = 无外部依赖即可启动，未连 Milvus 自动降级」；`DEPLOYMENT.md:58` 默认列 `true` → `false`；`docker-compose.yml:14` 保持 `"true"`（compose 自带 Milvus 容器，自洽且非矛盾，**有意不动**）
+  - **类 4（AgentOS 命名；拍板：保留适配器，只修措辞）**：作者先追问「是不是鉴权换成公开登录后 user_id 命名的问题」→ 已澄清这是**反向方向**（外部调用方按 AgentOS 协议调本服务），与 7.7 鉴权无关；定性证据 `api/agent_os_adapter.py:35` 与 `api/approvals_routes.py:29` 的 `from agno.os.utils import format_sse_event` → **AgentOS 是 Agno 框架自带运行时**，非内部平台名 → 命名 KEEP。仅改 3 处措辞：`core/config.py` 字段注译与 description、`.env.example:58-61`、`api/agent_os_adapter.py:67-72`（「upstream platform / some AgentOS deployments」→「calling platform / some callers」）。因 **`/traces*` 有活前端消费者**（`TracingPage` + `components/tracing/**` + `api/tracing.ts`），未整层 CUT
+  - **类 5（「真机」调试记录 10 处；拍板：只去会话 ID、保留症状记录）**：删 `core/agno_approval_patch.py:10` 的内部会话/run ID（`会话 327d751b / run 6c901b6b`）；`storage.py:23` · `stream_adapter.py:553,833` · `ApprovalCard.tsx:165,303,326,362` · `ApprovalCard.test.tsx:3` 的「（日期 真机：症状）」**保留**（真实工程记录，无项目/平台/凭证泄露）。复检 `(会话|session|run|sid)[= ]?[0-9a-f]{8}` **零命中**
+  - **顺带闭环的挂账**：6.4 挂账的 `qaclient`/`QAClient` 11 处复检**全零命中**（7.4 已闭环）
+  - **并行变更边界**：`agents/builtin/coding_agent.py:6` · `tools/coding_tools.py:40-41` 的「脚本工坊」对比说明属 `add-ai-coding-agent` 自有内容，**一行未改**（终态扫描仍可见，为有意保留）
+  - **记账（不跨批，转后续）**：
+    - ~~转 7.10（需拍板，**行为面非文案**）：`mcp_service/loader.py:20-31` 的「危险工具名」启发式列表含 `send_gm_cmd` / `repl_execute` / `call_gm_command`~~ → **作者随后拍板「这三个都是游戏业务内部工具，可以 CUT，并把有关的权限/白名单内容一并删掉」，已在本任务执行（见下「补记」）**
+    - 转 7.9：`README.md:161-166` 的 `/workflows` 三行接口表 + `qa-auto` 描述 + **失效链接** `docs/25-QA-Auto-Workflow.md`（4.6 既有挂账，此处补行号与失效链接证据）
+    - 转 7.x（tracing 面，仍在）：`api/agent_os_adapter.py` 的 `workflow_id` 形参 + `agent_type ∈ {agent, workflow}` 枚举 · `core/storage.py:89,101` · `core/tracing_exporter.py` 的 workflow 分类分支 · 前端 `TracingPage` / `AgentBreakdownTable` / `TraceFilterBar` / `TokenTrendChart` 的 Workflow 分组 · **`deploy/nginx.conf` 可能仍有其它 workflow 代理注释**（本轮只删了 `/workflows/ws` 行），7.x 处理 tracing 面时一并复核
+    - 保留（已判定为通用内容，无意清理）：`agents/base.py:43` 示例路径 `/agents/qa-automation/runs` · `main.py:112-113` Agno logger 名 `agno-workflow` · `coordinator/prompts.py:110-114`「Task Workflow — Four Phases」 · `coordinator/team_builder.py:390`「the 4-phase workflow」
+  - 验证：全树 `compileall` **ALL_COMPILE_OK**（各阶段共跑 4 次）+ `__pycache__` 归零 · 前端 `tsc --noEmit -p tsconfig.app.json` **零报错** · `vitest run` **16 files / 118 tests 全通过**（与 6.3 基线一致，无回归）· 设置项实跑 `QAAgentSettings(_env_file=None, session_secret_key='x')` → `milvus_enabled=False` / `agent_os_user_id_prefix=''` / `storage_dsn=''` · 终态扫描（`openspec` / `docs/0x` / `H73` / `Hunter` / `MBWorkbench` / `mbw` / `case-studio` / `工坊` / `qa-auto` / `ALL_SUCCESSFUL` / `GameServer`）**仅剩** `.gitignore:7`（合法忽略项）+ `README.md:161-166`（7.9 待重写）+ 并行变更 2 文件（有意保留）
+  - **工具教训（如实记账）**：`grep_search` 对本轮已改文件曾报出一条**与磁盘内容不符**的结果（`L2PreviewPanel.tsx:16` 的 `hunter_execute` 实际在改前即不存在）→ 关键判定改用 `python` 逐字节复核（`b'hunter' in line`）后确认，避免按错误索引改错文件
+  - **补记（作者追加拍板：CUT 三个游戏业务 MCP 工具名及其权限/白名单内容）**：
+    - **拍板原话**：「send_gm_cmd / repl_execute / call_gm_command 这三个工具都是对游戏业务的内部使用的工具，可以 CUT 并删掉有关的权限、白名单等等的内容了」；二轮追问「`hooks/mcp_safety_hook.py` 怎么处置」→ 作者选**保留骨架**（「大不了白名单、拦截这些都是空转」）而非整文件删除
+    - `mcp_service/loader.py` 的 `_L2_TOOL_PATTERNS`：删 3 条游戏工具名，**保留 8 个通用动词**（`bash`/`write`/`delete`/`create`/`modify`/`update`/`execute`/`run`）—— 该常量是通用的「需 L2 确认」启发式，非游戏专属
+    - `hooks/mcp_safety_hook.py` **342 行 → 140 行**（保留骨架，删净游戏分支）：
+      - 删除：`GM_USAGE_RULES`（`screen_cut` 规则）· `repl_execute` 全部前后置分支（坑1/3/7/10/11）· `search_gm_by_intent` 参数改名（坑6）· `_check_long_sleep()` + 两条 sleep 正则 · `_is_main_thread_timeout()` · `_is_screenshot_result()` · `_is_engine_command_call()` · 不再需要的 `re` 导入
+      - **保留**：`_AGENT_TOOL_ALLOWLIST` 空表 + `_check_scope()`（4.1 已定的通用 per-agent 工具白名单机制，空表 = 全放行/空转）· bash 超时守卫（原坑12）· Agno 中间件签名（`function_name` / `func` / `arguments` / `agent` / `run_context`）· 注册顺序契约
+      - 常量随通用化改名：`MAX_REPL_SLEEP_S` → **`MAX_TOOL_TIMEOUT_S`**（值仍取 `settings.max_blocking_seconds`，并加注释说明与 bash 工具自身的写入/后台超时同源）
+      - **内部引擎模块名一次性清零**：`dcs_core` / `dcs_extend` / `VisualProxyMgr` / `game3d` / `engine_command` / `screen_cut` / `search_gm_by_intent` 原本**只存在于该文件**，删分支即全镜像零命中
+    - 连带文案：`core/instructions.py` 删「游戏内操作（移动、战斗、UI、截图）统一使用 `repl_execute`」行、并把「MCP 工具（游戏内调试、REPL 执行等）」改为「MCP 工具」· `core/config.py` 注释删「intercept repl_execute time.sleep()」行（保留 bash 超时守卫行）· `mcp_service/manager.py` 注释「e.g. `repl_execute` … heavy game operations」→「heavy remote operations」· `agents/builtin/general_agent.py` 触发清单「MCP 游戏内自动化操作」→「MCP 自动化操作」· `agents/base.py` 与 `hooks/serial_tool_lock_hook.py` 注释「corrects/enriches」「safety enrichment」→「applies its guards」「safety guards」
+    - **未动**：`agents/builtin/coding_agent.py:7`「无游戏内执行」属并行变更自有内容；`hooks/coding_guard_hook.py` 的 `detect_dangerous_command` 是通用 bash 危险命令分类（非游戏语义）
+    - 验证：改动 8 文件 `py_compile` **PYC_OK** + 全树 `compileall` **ALL_COMPILE_OK** · `__pycache__` 归零 · 实跑 `import hooks.mcp_safety_hook` → `MAX_TOOL_TIMEOUT_S=180` / `_AGENT_TOOL_ALLOWLIST={}` / `_check_scope('X','bash')=None`（空表空转，符合拍板预期）；`from mcp_service.loader import _L2_TOOL_PATTERNS` → 8 个通用动词 · 终态扫描（`repl_execute|call_gm_command|send_gm_cmd|dcs_core|dcs_extend|VisualProxyMgr|game3d|screen_cut|search_gm_by_intent|engine_command|GM_USAGE_RULES|MAX_REPL_SLEEP_S|_check_long_sleep`）**零命中**
+- [x] 7.7 认证替换（`REPLACE`）：公开 OAuth 登录与回调；会话只保存本系统用户标识，不保存第三方凭证（D12）
+  - **先决事实**：镜像内认证原本是 **OpenID 2.0**（`auth/router.py` 178 行）——`urlopen` 做 associate + `checkid_setup` 重定向 + `sreg` 扩展取 `email`/`fullname`；配置只有 `openid_endpoint` 单字段（空 → 503）。**无任何内部供应商地址硬编码**，故替换工作量 = 协议层重写 + 配置面替换
+  - **作者三次拍板**：① 协议面 → **通用 OAuth2/OIDC（可配 authorize/token/userinfo 三端点）**，不绑定供应商；② 本地用户键 → **继续用 `email`**（DB 与前端零改动）；③ 安全项 → **`state` 强制校验 + PKCE 可选、默认开**
+  - **契约保持（关键决策）**：4 个端点路径与响应形状**一字未改** → `GET /auth/login_required` · `/auth/login_callback` · `/auth/get_login_user`（`code:0`+`user_info` / `code:300`+`redirect_url`） · `/auth/logout` → **前端 `App.tsx` / `api/auth.ts` / `api/client.ts` / `types/api.ts` 零改动**（已按 `api/server.py:434-435` 的 `/api` + `/auth` 挂载前缀确认回调绝对地址 `{base_url}/api/auth/login_callback`）
+  - **`auth/router.py` 重写（178 → 311 行）**：
+    - 授权请求：`response_type=code` + `client_id` + `redirect_uri` + `scope` + `state`（`secrets.token_urlsafe(24)`，存 session 并在回调**弹出后恒定时间比对** `secrets.compare_digest`）；PKCE 为 `S256`（verifier 存 session、只把 SHA-256 摘要发出，符合 RFC 7636）
+    - 回调：先处理供应商 `error`/`error_description` → 400；缺 `code` → 400；`state` 不符 → 400（日志记「possible CSRF」）；再用 `httpx.AsyncClient`（15s 超时，`Accept: application/json`）做**服务端** token 交换（含 `code_verifier`）→ 取 userinfo（`Authorization: Bearer`）→ 写 session → `get_or_register_user` → 302 回 `next`
+    - 上游异常分级：网络错误 / 非 200 / 非 JSON / 无 `access_token` / userinfo 既无 `email` 又无 `sub` → **502**（与「客户端 400」区分开）
+    - 身份映射 `_identity_from_userinfo()`：`email` 优先；显示名按 `name → preferred_username → login → nickname → email 前缀`；**无 email 时回退 `<sub>@<userinfo 主机名>`**（保证账号唯一且可用）
+    - **D12 落实并实测**：access token 只在请求作用域内传递，session 与 DB **均不落 token**（实测 `no token in session -> True`）
+    - 新增 `_safe_next_url()`：拒绝 `javascript:` / `data:` / `//host` / 纯 fragment，只放行绝对 `http(s)` 与站点相对路径 → 落 `frontend_url`；**未**做「受信 origin 白名单」（会打断 Vite dev 跨端口回跳），作为开放重定向硬化项记账转 8.x
+  - **配置面替换**：`core/config.py` 的 `openid_endpoint` → **7 个 `oauth_*` 字段**（`oauth_authorize_url` / `oauth_token_url` / `oauth_userinfo_url` / `oauth_client_id` / `oauth_client_secret` / `oauth_scope` 默认 `openid email profile` / `oauth_pkce_enabled` 默认 `True`），默认全空 → `_oauth_config()` 抛 503 并在 detail 里**列出缺哪些变量**；`.env.example` 的 OpenID 段整体替换（含回调注册地址与 Google 三端点示例）；`DEPLOYMENT.md` 新增「认证配置（OAuth 2.0 / OIDC，可选）」表 + 回调注册说明 + D12 说明
+  - **KEEP（不动）**：`auth/dependencies.py`（`get_current_user` 读 `session["email"]`，仅补 docstring 说明「标识是本系统用户键，不是供应商 token」）· `auth/service.py`（`get_or_register_user` / `get_user_info`，role 仍运维托管、永不从 UI 写）· `db/models.py` 的 `AgentUser(email,name,role)` · `UserSession.email` · `user_skills.owner_email` · `_session_extra_data.real_user_id` 透传链
+  - **依赖**：用已在依赖内的 `httpx`（异步），**未新增任何三方库**；`auth/dependencies.py` 原本已写明「OAuth provider callback → signed cookie session. No JWT」
+  - 验证：`compileall` 全树 **ALL_COMPILE_OK** + 改动 3 文件 `py_compile` 通过 + `__pycache__` 归零 · **功能级验证**（`%TEMP%\qa_oauth_check.py`，用桩 `fastapi` + 假 `httpx`，不联网）：注册路由 4 条与原先一致 · 未配置 → **503** · 授权 URL 含 `state`/`code_challenge`/`S256`/`client_id` 且 session 存入 3 个在途键 · 身份映射 4 例（email/name · preferred_username · `sub` 回退 `42@provider.example` · 空 profile → **502**）· `_safe_next_url` 6 例（`javascript:` / `//evil` / `#frag` / `data:` → `/`；`http://localhost:5173/page` 与 `/rel` 放行）· token 交换请求体含 `code_verifier` 且 verifier 已从 session 弹出 · userinfo 带 `Bearer` 头 · 回调 400 三例（state 不符 / 缺 code / 供应商 error）· 正常链路 302 回 `next` 且 session 只剩 `email`+`fullname`（**无 token**）· 终态扫描 `openid_endpoint|OPENID_ENDPOINT|sreg|checkid_setup` **零命中**（剩余 `openid` 命中均为 OIDC 协议本身：`OpenID Connect`、scope `openid`、Google `openidconnect` 端点示例）
+  - **记账（转后续）**：
+    - 转 8.x（安全硬化）：登录后跳转的**受信 origin 白名单**未做（当前只拦 `javascript:`/`data:`/协议相对地址）——因前端在 dev 下与后端跨端口（5173 → 8000），白名单会打断开发态回跳，需先定 `frontend_url` 与 dev origin 的关系再收紧
+    - 转 8.x（既有缺陷，非本轮引入）：`auth/service.py:59-61` 的 `get_or_register_user` 在 DB 异常时 **静默降级**（返回内存 dict，日志 warning）→ DB 不可用时「登录成功但不落库」；启动验证时不要把它误判为 7.7 回归
+    - 转 7.9：`README.md` 重写时补 OAuth 配置与回调注册段落
+  - **7.8 需同步（本轮实测发现，非 OpenID 残留）**：`docker-compose.yml` 的 `x-common-env`（第 8-21 行）**根本没有传 `OPENID_ENDPOINT`**（故无需改名），但暴露两个更实的问题 → ① 该清单**缺 `SESSION_SECRET_KEY`**：`core/config.py` 的 `_require_session_secret_key` 是 fail-fast，容器内又无 `.env`（见 ②），`docker compose up` 会**启动即崩**；② 代码仓**没有 `.dockerignore`**，而 `Dockerfile:35` 是 `COPY . .` → `.env`（含 `LLM_API_KEY` / `SESSION_SECRET_KEY` / 内部 `MONGO_URI`）会**被打进镜像层**。两者与 `OAUTH_*` 未传（可通过 `.env` 或补进 `common-env`）一并在 7.8 处理
+- [x] 7.8 部署脚本与容器编排文件：内部事实清零或整体 CUT
+  - **4.4 已完成**：`deploy.sh` / `DEPLOYMENT.md` / `docker-compose.yml` / `Dockerfile` / `qa_agent.spec` 五文件的内部事实已清零并按 `core/config.py` 实际字段校正（详见 4.4 记录）→ 本任务只需复核，并处理 4.4 挂账的 `psycopg2` 缺口（compose postgres 路径）与 compose 卷挂载一致性（`./skills` 挂载 vs `PROJECT_SKILLS_DIR=.claude/skills`、`./agents` 为源码目录）
+  - **7.7 实测新增（本轮，须一并处理）**：① `docker-compose.yml` 的 `x-common-env`（8-21 行）**缺 `SESSION_SECRET_KEY`** —— 而 `core/config.py` 的 `_require_session_secret_key` 是 fail-fast、容器内又无 `.env` → `docker compose up` **启动即崩**；② 代码仓**无 `.dockerignore`**，`Dockerfile:35` 却是 `COPY . .` → `.env`（`LLM_API_KEY` / `SESSION_SECRET_KEY` / 内部 `MONGO_URI`）**被打进镜像层**；③ `OAUTH_*` 未传（可走 `.env` 或补进 `common-env`）
+  - **本轮完成：逐文件判定 → 九次拍板 → 执行 → 验证**。范围从 4.4 登记的「五文件复核」扩到 **8 文件 + 1 个缺失文件**（`.dockerignore`），共 34 行发现 + 3 条跨批新发现
+  - **判定依据全部为实测或权威来源（非推断）**：
+    - **死键实测**：`SERVER_HOST=9.9.9.9 / SERVER_PORT=9999` → `settings.server_host=0.0.0.0`；`API_HOST=1.1.1.1` → `1.1.1.1`。根因 `core/config.py` 用 `Field(alias="api_host")`，pydantic-settings 只认别名、字段名不参与，`extra="ignore"` 再把 `SERVER_*` 静默吞掉（`%TEMP%\qa_env_probe.py`）
+    - **agno 驱动要求取自 PyPI 元数据**（`agno 2.6.22` 的 `requires_dist`）：`agno[postgres]` = `psycopg` + `psycopg-binary`（**v3**）· `agno[sqlite]` = `sqlalchemy` + `aiosqlite` · `agno[os]` = `sqlalchemy` → 反证 `core/storage.py:214` 的「missing psycopg?」注释正确、`pyproject` 的 `psycopg2-binary` 错误、`hiddenimports` 里的 `sqlalchemy` 必要
+    - **公开可安装性核验**：`requirements.txt` 里 20 个来历可疑的包名（`griffelib` / `httpcore2` / `httpx2` / `mcp-types` / `uncalled-for` / `lazy-model` / `cyclopts` / `caio` / `joserfc` / `py-key-value-aio` / `agnoctl` / `fastmcp-slim` …）**全部存在于公开 PyPI** ✓ → 无「内部索引专属包」风险（该疑点关闭）
+    - **compose 的 `.env` 语义**：只用于 `${}` 插值、**不会注入容器环境** → `SESSION_SECRET_KEY` / `OAUTH_*` 从未进入容器；且 `.env` 默认 `STORAGE_BACKEND=mongo` 而 compose 不含 mongo 服务；`./skills`、`./agents` 经目录清点证实是 **Python 源码包**，真正的用户目录是 `.claude/skills`（`PROJECT_SKILLS_DIR`）与 `.claude/agents`（`agents/agent_loader.py:34`）
+  - **作者九次拍板（原话）**：①「env_file: .env + 新增 .dockerignore（推荐）」②「容器侧改名 + 删 config 重复字段（推荐）」③「只对齐驱动（推荐）」④（多选）仅勾「卷挂载重指向（推荐）」⑤（多选）仅勾「deploy.sh 默认端口改 8000（推荐）」⑥「删 packages.find + 明确『从项目根运行』（推荐）」⑦（多选）仅勾「补 MIT LICENSE（推荐）」⑧「本轮清零，整段删掉代号（推荐）」⑨「其余 REPLACE/CUT 全部执行（推荐）」
+  - **执行明细**：
+    - `docker-compose.yml`：qa-agent 服务新增 `env_file: - .env`；`SERVER_HOST/SERVER_PORT` → `API_HOST/API_PORT`；卷挂载 `./skills` / `./agents` → `./.claude/skills` / `./.claude/agents`
+    - **`.dockerignore` 新建**（仓内原本没有）：排除 `.env` / `.env.*` · `.git` · 编辑器目录 · `__pycache__` / `*.py[cod]` / `*.egg-info` / `build` / `dist` · `.venv` / `venv` · `data` · `*.log` / `*.pid` → `COPY . .` 不再把 `.env` 里的真实凭证打进镜像层
+    - `Dockerfile`：`ENV SERVER_HOST/SERVER_PORT` → `API_HOST/API_PORT`（55 行不变）
+    - `core/config.py`：删重复字段 `api_host` / `api_port`（全镜像仅此 2 行引用），并注明「别名即唯一环境键、字段名不参与」（551 行不变）
+    - `pyproject.toml`：`[postgres]` extra `psycopg2-binary` → **`psycopg[binary]>=3.1`**；**删 `[tool.setuptools.packages.find]`**（`include=["qa_agent*"]` 在扁平布局下匹配不到任何包 → 非 editable 的 `pip install .` 不装代码）并写明「本仓是应用不是可安装库、从项目根运行」；`authors` → `The QA Agent Authors`
+    - **`LICENSE` 新建**（MIT，`Copyright (c) 2026 The QA Agent Authors`）—— pyproject 长期声明 MIT 却无 LICENSE 文件
+    - `requirements.txt`：补 `psycopg[binary]==3.3.6` + `aiosqlite==0.22.1`（取 PyPI 最新），表头显式标注 **这两条非 freeze 产物**（冻结环境两个后端都没用），147 → 154 行
+    - `deploy.sh`：默认端口 `16570` → **`8000`**（含用法文案）；`do_deploy` 的 `git pull` 改 **best-effort**（`|| warn`——原 `set -e` 下无 upstream 的公开克隆会让整链 abort）；`check_env` 增 `SESSION_SECRET_KEY` 非空预检
+    - `.gitignore`（嵌套）：补 `.venv/`（`deploy.sh` 实际创建的名字，原只有 `venv/`）· `__pycache__/` · `*.pid` · `build/` · `dist/`；删已无对应目录的 `openspec/`
+    - `.env.example`：补 `FRONTEND_URL=/`（登录后跳转）
+    - `DEPLOYMENT.md` 六处订正：`API_HOST`/`API_PORT` 从「别名」说法改为**唯一有效键** · 删不存在的「`drop-legacy` housekeeping 子命令」（`memory/collections.py` 只剩注释、`scripts/milvus_housekeeping.py` 不在仓内）改手工流程 · `/api/health` 示例补 `version` 并写清 `milvus` 三态（`connected`/`disconnected`/`disabled`，`MILVUS_ENABLED=false` 不算降级）· 开发动线补「`.env` 默认 `mongo` 而 compose 无 mongo 服务」· `qa-agent/core/...` → `core/...` · 生产模式补 `env_file` 语义与 OAuth 回调注册提示
+  - **跨批新发现并本轮清零：内部 change 代号 44 处**（字节级扫描 127 文件得 16 个 token；属作者并行 change 的 `add-ai-coding-agent` 4 处**不动**）：`fix-event-seq-blackout`×8 · `add-turn-regenerate`×6 · `fix-tracing-token-undercount`×4 · `add-agent-os-run-resume`×3 · `add-session-history-pagination`×3 · `add-user-skill-upload`×3 · `fix-session-io-blocking`×3 · `add-agent-os-hitl-continue`×2 · `add-context-usage-visibility`×2 · `add-thinking-stream-display`×2 · `add-tracing-cache-token-display`×2 · `fix-approval-reject-note-injection`×2 · `fix-regenerate-on-paused-run`×2 · `add-session-file-upload`×1 · `fix-milvus-delete-and-housekeeping`×1
+    - 处置＝**整段删掉代号括注**（减法优先）；共 48 处行级操作（44 处代号 + 3 处连带收尾 + 1 处删行），由 `%TEMP%\qa_purge_codenames.py` 执行：**逐行 anchor 断言**（行号 + 期望串双校验，不匹配即记账不写），**按文件探测 `\r\n` 后 split/join 字节**以保留原行尾风格，报 `problems=0`
+    - 连带收尾 3 处：`api/event_store.py` 458-460 的裸 `D2`/`D1` 合并且删 1 行 · `core/agno_approval_patch.py:27` 补回括号并把 `:28` 整行删除 · `core/tracing_exporter.py:311` 的「见 design D4」改写
+    - 复扫终态：`distinct tokens: 1`（只剩作者并行 change 的 4 处）
+  - **验证**：全树 `compileall` **ALL_COMPILE_OK** · `__pycache__` 归零 · `docker-compose.yml` `yaml.safe_load` 通过（5 服务齐全、`env_file`/`API_HOST`/卷挂载按预期）· `pyproject.toml` `tomllib` 通过（`authors` 已改、`postgres` extra 已改、`packages.find` 消失）· `requirements.txt` 154 行、无畸形行、无重复条目 · `deploy.sh` `bash -n` **OK** · 三处跨行改写逐段回读确认语义连贯 · 死键修复后复跑探针（`API_* → 1.1.1.1/1111`、`SERVER_* → 0.0.0.0/8000`、重复字段 `hasattr=False`）
+  - **未采纳（作者未勾选 → 保持现状，已记账）**：`docker-compose.yml` 的 `version: "3.9"` 键 · `qaagent_secret` 口令 dev 默认（与 `POSTGRES_PASSWORD` 默认自洽、`compose up` 开箱即用，但与 `config.py` 「不打口令字面量」的立场冲突——作者选择保留低摩擦）· `qa_agent.spec` 的 `('.claude\\skills', ...)` 反斜杠（Linux 构建取不到该目录）· spec 补 `.env` 到 `datas` · spec `console=False`（服务端 exe 丢 stdout 日志）· `pyproject` 的 `testpaths=["tests"]`（目录不存在）· `DEPLOYMENT.md` 限流节的内部变更管理口吻
+  - **7.8 补记（第二轮：作者说明「我忘记勾选其它项了，我想都勾选的」→ 全部未采纳项已执行）**：
+    - `docker-compose.yml`：**删 `version: "3.9"` 键**（Compose v2 弃用、每次 up 告警）；**口令字面量清零**——`STORAGE_DSN` 与 `POSTGRES_PASSWORD` 改 `${VAR:?…}` 必填形式，`qaagent_secret` 全树零命中。**互斥项取舍**：选项 3（改必填）与选项 4（保留 dev 默认）互斥，按「都勾选 = 采纳改动」取选项 3；注意 `:?` 对**空值同样报错** → 从 `.env.example` 复制出的空 `POSTGRES_PASSWORD=` 会 fail fast，这正是 D15 想要的行为。连带：`.env.example` 新增 `POSTGRES_PASSWORD`（此前根本没有该键，而 compose 现在要求它）、`STORAGE_DSN` 注释补「compose 场景 host 用 `postgres` 且与 `POSTGRES_PASSWORD` 保持一致」、`DEPLOYMENT.md` 生产模式措辞同步
+    - `qa_agent.spec`：`('.claude\\skills', '.claude\\skills')` → **正斜杠**（反斜杠在 Linux 不是分隔符，会静默取不到目录）；`console=False` → **`console=True`**（服务端 exe 不能丢 stdout/stderr 的启动横幅、uvicorn 日志与崩溃栈）
+    - **偏离字面选项 1 处（安全理由，需知悉）**：选项「spec 补 `.env` 到 `datas`」**未按字面执行**——把 `.env` 打进 `datas` 等于**把构建机上的真实凭证封进可执行文件**（`LLM_API_KEY`/`SESSION_SECRET_KEY`/`MONGO_URI`），与 D12/D14 相悖。改为实现**同一意图**：`core/config.py::_resolve_env_file()` 的冻结分支改为**先找 exe 同目录的 `.env`**、`_MEIPASS` 作为第二候选（兼容曾用 `--add-data` 构建的包），并在 spec 里就地写明「`.env` 刻意不打包，运行时从 exe 旁读取」。这样「冻结包能读 `.env`」成立、文档-实现不一致消除、凭证不进二进制
+    - `pyproject.toml`：删 `testpaths = ["tests"]`（目录不存在且被嵌套 `.gitignore` 忽略；保留 `asyncio_mode = "auto"`）
+    - `DEPLOYMENT.md`：限流节去内部变更管理口吻——标题去掉「（会话状态分布变更）」，删「BREAKING 提示」表与「如需回滚，注释 …」句，把行为差异压成一行，保留机制说明与 `[TPM-Content]`/`[TPM-Content-Fallback]` 日志观察指引
+    - 验证：全树 `compileall` OK · `qa_agent.spec` 可编译 · `docker-compose.yml` `yaml.safe_load` 通过（`version` 键已消失、两处 `:?` 已生效）· `pyproject.toml` `tomllib` 通过（86 行，`testpaths` 已消失）· `.env.example` 150 行含 `POSTGRES_PASSWORD` · **冻结路径功能实测**（桩 `sys.frozen=True` + 伪造 exe 目录 + exe 旁写 `.env`）→ `_resolve_env_file()` 命中 exe 旁路径、`settings.log_level` 读到该文件里的 `warning`、`session_secret_key` 非空（证明真被加载而非仅解析）· 残留扫描（`qaagent_secret` / `version: "3.9"` / `会话状态分布变更` / `BREAKING`）**NONE** · `__pycache__` 归零
+  - **记账（转后续）**：
+    - 转 7.9：`README.md:119,152` 健康检查写成 `/health`（真实为 `/api/health`）· README 的 Docker 段需与新的 `env_file`/`.dockerignore` 语义对齐 · 「从项目根运行」需在 README 明写（⑥ 拍板的文档半边）· OAuth 注册段落（7.7 已挂）
+    - 转 7.10（内部指代残留，**未拍板不动**）：裸设计编号 `D<n>` **57 处 / 22 文件**——其中仅 3 处与本 change 的 `design.md` 语义自指吻合（`core/config.py:459` D15 · `auth/router.py:16,277` D12），其余多为**仓外内部 change 的设计编号**（如 `api/server.py:801` 的 D13 与本 change 的 D13「删减顺序」语义无关，属编号巧合；`coordinator/*` 的 `Design reference:`、`core/storage_reader.py` 的 D3/D6 同理）→ 是否清零、如何区分自指与外部指代待 7.10 拍板 · `core/config.py:26-27` 注释称 `.env` 由 `--add-data` 打进 `_MEIPASS`，但 spec 无该条目（spec 未采纳项留下的文档-实现不一致）· `memory/knowledge_hub.py:644` 引用 `scripts/milvus_housekeeping.py`（仓内无 `scripts/`）
+    - 转 8.x（只能实跑判定）：compose 的 minio 用旧键名 `MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY`（新镜像要求 `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`）与 `curl` healthcheck 是否成立——milvus 依赖 `service_healthy`，不成立则整套 compose 卡住 · 补驱动后 `PostgresDb` 实连 · 默认 `STORAGE_BACKEND=mongo` 而环境无 MongoDB 时的降级行为 · `deploy.sh` 的 `kill_port_processes` 会 `kill -9` 占用端口的任意进程（公开仓里的攻击性偏强，待评估）
+    - 工具教训（本轮，重要）：`edit` 在 `docker-compose.yml` 上**把整文件截断成只剩新块**（`mirror/` 不受 git 保护，无回滚可能）→ 已用上下文中的原始全文重建并以 `yaml.safe_load` 复核。**镜像区改动改为「整文件 write + 解析器复核」或「脚本按行改 + 逐行 anchor 断言」，改完立即验行数/解析，不再对镜像区文件用裸 `edit`**
+- [ ] 7.9 启动说明写入 `mirror/README.md`：安装、配置、启动、验收范围、未覆盖项、OAuth 应用注册步骤（R15）
+  - **4.6 挂账**：`README.md` 的 `/workflows` 三行接口表（`GET /workflows` · `GET /workflows/{workflow_id}` · `POST /workflows/{workflow_id}/runs`）指向 4.5 已 CUT 的工作流适配层，重写 README 时一并删除
+  - **7.8 挂账（本轮实测）**：① `README.md:119` 与 `:152` 把健康检查写成 `curl http://localhost:8000/health` / `GET /health`，真实挂载前缀是 `/api/health`（`api_router = APIRouter(prefix="/api")`）→ 照抄会 404；② README 的 Docker 段需与 7.8 新语义对齐（`env_file: .env` 为必读、`.dockerignore` 已排除 `.env`、compose 卷挂载改指 `./.claude/skills` 与 `./.claude/agents`）；③ ⑥ 拍板的「**本仓是应用、不是可安装库；安装后从项目根运行**」需在 README 正文明写（现仅落在 `pyproject.toml` 注释与 `DEPLOYMENT.md`）
+- [ ] 7.10 替换产物自查：无内部事实、无真实凭证、未加入扫描豁免
+  - **7.8 挂账（自查时须专门过一遍）**：① **裸设计编号 `D<n>` 57 处 / 22 文件**——7.8 只清了带 change 名的代号，不带 change 名的裸 `D3`/`D6`/`D13` 之类扫描器抓不到；其中仅 3 处（`core/config.py:459` D15 · `auth/router.py:16,277` D12）与本 change `design.md` 自指吻合、可保留，其余多指向**仓外内部 change** 的设计编号（`api/server.py:801` 的 D13 与本 change D13 语义无关；`coordinator/coordinator_agent.py:10` / `notification.py:8` / `worker_pool.py:7` 直接写 `Design reference: D1/D4/D2`；`core/storage_reader.py` D3/D6）→ 需先定「自指 vs 外部指代」判据再清零
+  - **② 文档-实现不一致（7.8 未采纳项的副产物）**：`core/config.py:26-27` 注释称冻结模式下 `.env` 由 `--add-data` 打进 `_MEIPASS`，但 `qa_agent.spec` 的 `datas` 里没有 `.env` 条目 → 注释与实现不符，二选一（补条目 / 改注释）
+  - **③ 悬空引用**：`memory/knowledge_hub.py:644` 提到 `scripts/milvus_housekeeping.py`，仓内已无 `scripts/` 目录；`memory/collections.py` 与 `DEPLOYMENT.md` 原本引用的 `drop-legacy` 子命令也不存在（7.8 已改 `DEPLOYMENT.md`，代码注释里的 `drop-legacy` 提法需一并复核）
+  - **④ 扫描器覆盖面**：7.8 的代号扫描只覆盖 `.py/.md/.sh/.yml/.toml/.txt` 六类后缀 → 自查时确认镜像内是否还有 `.json`/`.spec`/`.cfg`/`.ini`/`.env*` 等未覆盖类型的同类残留
+
+## 8. 本地可运行验证
+
+- [ ] 8.1 后端：依赖可安装、服务可启动、健康检查正常
+  - **4.6 挂账（既有缺陷，非本轮引入）**：`api/startup_recovery.py:recover_orphan_sessions()` 全镜像零调用方 → 崩溃会话抢救链（`run_status == "running"` 检测 → `session_events` 聚合 → `$push` 回 `agno_sessions` → 翻 `interrupted` + 推系统通知）实际未生效。作者拍板保留该模块但不接回 lifespan，故启动验证时不要因「无 Recovery 日志」判为回归；原入口疑与 4.4 记录的「`deploy.sh` 引用的 `startup_probe` 模块在镜像内不存在」同源
+  - **7.8 挂账（只能实跑判定）**：① compose 的 `minio` 用旧键名 `MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY`，新版 minio 镜像要求 `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`，且 healthcheck 用 `curl`——而 `milvus-standalone` 对 `etcd`/`minio` 是普通 `depends_on`、qa-agent 对 `milvus-standalone` 是 `service_healthy` → minio 起不来会让整套 compose 卡住；② `requirements.txt` 补了 `psycopg[binary]` 后 `agno.db.postgres.PostgresDb` 能否实连（7.8 只核了 PyPI 元数据里的 extra 名，未实连）；③ 默认 `STORAGE_BACKEND=mongo` 而环境无 MongoDB 时的实际行为（`core/storage.py` 只在 `ImportError` 时降级 SQLite，连不上 Mongo 是否降级需实测）；④ `deploy.sh` 的 `kill_port_processes` 会 `kill -9` 占用端口的任意进程；⑤ `deploy.sh check` 的 `mongosh` 提示、`DATA`/日志卷属主是否真可写
+- [ ] 8.2 前端：依赖可安装、界面可访问、与本地后端连通
+- [ ] 8.3 对话链路：创建会话 → 发送消息 → 收到流式输出（公开供应商 API）
+- [ ] 8.4 中断审核链路：L2 命令预览与修改、L3 结果验收走通
+- [ ] 8.5 启动日志检查：无内网地址与内部系统名
+- [ ] 8.6 报错路径检查：模拟依赖不可用，错误信息不含内部主机名与服务名
+- [ ] 8.7 界面文案检查：无业务专有名词与内部系统名
+
+## 9. 全量复核（揭幕前强制关卡）
+
+- [ ] 9.1 全量闸门：脱敏扫描通过（含镜像区与替换产物）
+- [ ] 9.2 体量核对：无构建产物、无嵌入运行时、无依赖目录、无缓存、无本地配置文件与备份
+- [ ] 9.3 人工终审：按「假设雇主与外部读者都会看到」标准逐行通读镜像区
+- [ ] 9.4 零留痕核对：仓库任何文件不含源路径与主机名；源仓库工作树与提交历史无新增改动
+- [ ] 9.5 引用核对：镜像区未被任何页面或内容引用，且不在站点构建产物中
+- [ ] 9.6 记录终审结论（日期 + 结论 + 已完工批次清单）
+
+## 10. 揭幕与发布
+
+- [ ] 10.1 揭幕：移除 `.gitignore` 中的 `mirror/` 条目
+- [ ] 10.2 单次提交入库（含镜像区与本次文档变更）
+- [ ] 10.3 线上核对：镜像区不上站、站点与 deck 正常、链接健康检查通过
+- [ ] 10.4 阶段验收：镜像区 README 形态声明与台账准确，站点侧无镜像区内容
+- [ ] 10.5 公开侧登记完成状态（泛化表述）
+
+## 11. 非目标（本变更不做）
+
+- [ ] 11.1 站内浏览镜像区（文件树与代码阅读器）——另开变更
+- [ ] 11.2 生产可用性（部署、并发、监控、安全加固）——明确排除
+- [ ] 11.3 增量同步或定期重导机制——不做

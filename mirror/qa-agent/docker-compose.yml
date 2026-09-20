@@ -1,0 +1,154 @@
+# ─────────────────────────────────────────────────────────────
+#  QA Agent System — Docker Compose
+#  Services: qa-agent, milvus (+ etcd + minio), postgres
+# ─────────────────────────────────────────────────────────────
+
+x-common-env: &common-env
+  LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com}
+  LLM_API_KEY: ${LLM_API_KEY}
+  LLM_MODEL: ${LLM_MODEL:-deepseek-flash}
+  MILVUS_HOST: milvus-standalone
+  MILVUS_PORT: "19530"
+  MILVUS_ENABLED: "true"
+  STORAGE_BACKEND: postgres
+  # No password literal ships in this file — both keys are required from .env.
+  # STORAGE_DSN must point at the compose service (host "postgres") and carry
+  # the same password as POSTGRES_PASSWORD below.
+  STORAGE_DSN: ${STORAGE_DSN:?STORAGE_DSN is required - see .env.example}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  DEBUG: "false"
+  INTERRUPT_TIMEOUT_MINUTES: "30"
+
+services:
+  # ── QA Agent API ─────────────────────────────────────────────
+  qa-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: qa-agent:latest
+    container_name: qa-agent
+    ports:
+      - "8000:8000"
+    # .env is read by compose twice: for the ${...} interpolation in
+    # x-common-env, and (via env_file below) as the container's own
+    # environment. Keep every provider setting there — nothing is defaulted
+    # silently, and SESSION_SECRET_KEY has no default at all.
+    env_file:
+      - .env
+    environment:
+      <<: *common-env
+      # pydantic-settings reads these names — SERVER_HOST/SERVER_PORT are
+      # silently ignored.
+      API_HOST: "0.0.0.0"
+      API_PORT: "8000"
+    volumes:
+      # Mount the human-editable agent/skill directories — NOT ./skills and
+      # ./agents, which are Python source packages already baked into the image.
+      - ./.claude/skills:/app/.claude/skills:ro   # PROJECT_SKILLS_DIR
+      - ./.claude/agents:/app/.claude/agents:ro   # custom agent definitions
+      - qa-agent-data:/app/data       # Persistent SQLite / local storage
+      - qa-agent-logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      milvus-standalone:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ── PostgreSQL (session / agent storage) ─────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: qa-postgres
+    environment:
+      POSTGRES_DB: qa_agent
+      POSTGRES_USER: qaagent
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required - see .env.example}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qaagent -d qa_agent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Milvus infrastructure ─────────────────────────────────────
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.5
+    container_name: milvus-etcd
+    environment:
+      ETCD_AUTO_COMPACTION_MODE: revision
+      ETCD_AUTO_COMPACTION_RETENTION: "1000"
+      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
+      ETCD_SNAPSHOT_COUNT: "50000"
+    volumes:
+      - etcd-data:/etcd
+    command: >
+      etcd
+      --advertise-client-urls=http://127.0.0.1:2379
+      --listen-client-urls=http://0.0.0.0:2379
+      --data-dir=/etcd
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  minio:
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    container_name: milvus-minio
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    volumes:
+      - minio-data:/minio_data
+    command: minio server /minio_data --console-address ":9001"
+    ports:
+      - "9001:9001"   # MinIO console (optional)
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  milvus-standalone:
+    image: milvusdb/milvus:v2.3.4
+    container_name: milvus-standalone
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    volumes:
+      - milvus-data:/var/lib/milvus
+    ports:
+      - "19530:19530"
+      - "9091:9091"   # Milvus metrics
+    depends_on:
+      - etcd
+      - minio
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  qa-agent-data:
+  qa-agent-logs:
+  postgres-data:
+  etcd-data:
+  minio-data:
+  milvus-data:
