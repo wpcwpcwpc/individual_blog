@@ -556,6 +556,7 @@
   - **记账**：`db/mongo.py:69` 的 `except Exception` 把「依赖不匹配」这类硬错误也吞成「MongoDB unavailable」→ 与 8.x 已挂的 `get_or_register_user` 静默降级同源，建议合并评估「依赖不匹配是否应 fail loud」（D15 的思路）· 前端 `<title>qa-agent-ui</title>` 是占位 → 9.x 打磨项 · `vite.config.ts` 的 `__dirname` 与 `proxy target` 硬编码 8000（本次靠 `.env.local` 绕开，未改代码）→ 是否给 proxy 加可配项留待 9.x 判
   - **4.6 挂账（既有缺陷，非本轮引入）**：`api/startup_recovery.py:recover_orphan_sessions()` 全镜像零调用方 → 崩溃会话抢救链（`run_status == "running"` 检测 → `session_events` 聚合 → `$push` 回 `agno_sessions` → 翻 `interrupted` + 推系统通知）实际未生效。作者拍板保留该模块但不接回 lifespan，故启动验证时不要因「无 Recovery 日志」判为回归；原入口疑与 4.4 记录的「`deploy.sh` 引用的 `startup_probe` 模块在镜像内不存在」同源
   - **7.8 挂账（只能实跑判定）**：① compose 的 `minio` 用旧键名 `MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY`，新版 minio 镜像要求 `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`，且 healthcheck 用 `curl`——而 `milvus-standalone` 对 `etcd`/`minio` 是普通 `depends_on`、qa-agent 对 `milvus-standalone` 是 `service_healthy` → minio 起不来会让整套 compose 卡住；② `requirements.txt` 补了 `psycopg[binary]` 后 `agno.db.postgres.PostgresDb` 能否实连（7.8 只核了 PyPI 元数据里的 extra 名，未实连）；③ 默认 `STORAGE_BACKEND=mongo` 而环境无 MongoDB 时的实际行为（`core/storage.py` 只在 `ImportError` 时降级 SQLite，连不上 Mongo 是否降级需实测）；④ `deploy.sh` 的 `kill_port_processes` 会 `kill -9` 占用端口的任意进程；⑤ `deploy.sh check` 的 `mongosh` 提示、`DATA`/日志卷属主是否真可写
+  - **7.8 挂账补记（9/20 迁库后全仓扫描时发现，7.8 当时漏看的文件）**：`qa-agent-ui/deploy/docker-compose.yml` 未纳入 7.8 的四文件复核范围，存在同类缺陷 —— 第 32/33 行仍写 `SERVER_HOST=0.0.0.0` / `SERVER_PORT=8000`（**pydantic-settings 只认 `API_HOST`/`API_PORT`，两个键被静默忽略**，与 7.8 已修的同源问题）；第 37 行 healthcheck 打 `http://localhost:8000/health`（真实前缀 `/api/health`，照抄会 404 → 容器永远 unhealthy → `depends_on: service_healthy` 卡住 nginx）；第 36 行注释 `见 api/server.py:1564` 行号已失效（`/health` 实际在 `api/server.py:2441`）。该文件相对路径（`context: ../../qa-agent`、`env_file`、dist 挂载）在迁库后仍成立
 - [ ] 8.2 前端：依赖可安装、界面可访问、与本地后端连通
 - [ ] 8.3 对话链路：创建会话 → 发送消息 → 收到流式输出（公开供应商 API）
 - [ ] 8.4 中断审核链路：L2 命令预览与修改、L3 结果验收走通
@@ -593,6 +594,14 @@
 - [ ] 10.7 独立库发布闸门（新库转 public 前强制）
   - 9.1–9.3 的扫描对象由「personal-site 内的镜像区」改为**新库工作树**；9.5 相应变为「新库未被站点引用」
   - 7.9（README 启动说明）/ 7.10（替换产物自查）在新库完成后，才允许 git 仓库可见性由 private 转 public
+- [ ] 10.8 凭据入库与跨机迁移（9/20 作者新增诉求 + 拍板）
+  - 作者原话：「先把git都上传了，所有内容，包括env，然后我要删除跟这台机器的所有git连接与记录，然后在另一台机器上做git管理」
+  - **已做的安全告知**（如实记账）：明确提示 `.env` 含 4 类敏感值 —— `LLM_API_KEY`、`OAUTH_CLIENT_SECRET`、`SESSION_SECRET_KEY`（可伪造任意登录态）、内网 `mongodb://7.25.185.247:30020/` 与本机库口令；并说明提交进 Git 历史**不可逆**、将来转 public 会同时暴露凭据与内网地址、且 9.1/9.4 会因此判不通过，用 `git filter-repo` 补救需先轮换
+  - **作者拍板：「B 提交 .env，但把内网 Mongo 地址换成占位符」** → 已执行：`MONGO_URI` 改为 `mongodb://localhost:27017/` 并加注释（可选改 `STORAGE_BACKEND=sqlite` 自包含）；`qa-agent/.env` 与 `qa-agent-ui/.env.local` 以 `git add -f` 入库（提交 `576c9d7`，跟踪文件 284 → 286）
+  - **连带收益**：内网地址是本仓库唯一的内网事实载体，移除后 README 第 11 行「不依赖任何内部资源、不连组织内网」的声明才成立（该行原为「待核」状态）
+  - **写入提交信息的纪律**（转 public 前必须执行）：轮换 `LLM_API_KEY` / `OAUTH_CLIENT_SECRET` / `SESSION_SECRET_KEY`（必要时 `STORAGE_DSN` 口令）→ `git filter-repo` 重写历史
+  - **迁库后扫描证据**（`%TEMP%\qa_internal_scan.py`，290 文件）：命中 8 处，逐条判为无害 —— `README.md:11,12` 与 `qa-agent/.env:34` 是「内网」二字本身出现在说明/注释里；`qa-agent-ui/package-lock.json:5996,6612` 的 `h73` 落在 base64 校验串（`…PDbNh73V8w==`）；`qa-agent-ui/deploy/docker-compose.yml:20` 的「内网」是「仅容器内网络可达」的子串。**无真实内网地址、无内部系统名残留**
+  - 待办（作者侧）：GitHub 建 **private 空仓库** → 提供 URL → 加 remote 并推送；推送后按作者要求在**本机**移除远程与凭据痕迹（`git remote remove origin`、清理 Windows 凭据管理器中的 GitHub 条目等），由作者确认后执行
 
 ## 11. 非目标（本变更不做）
 
