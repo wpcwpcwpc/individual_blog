@@ -2,8 +2,9 @@
  * 脱敏扫描 —— 构建前置硬闸门。
  *
  * 读取禁出词表（CI：secret GLOSSARY_WORDS；本地：gitignored 的 GLOSSARY.local.md）
- * 的「2.1 精确词 / 2.2 正则模式」，扫描站点的内容与样式来源目录；命中即打印位置并以
- * 非零码退出，使构建失败——漏网内容物理上无法被发布。
+ * 的「2.1 精确词 / 2.2 正则模式」，扫描站点内容来源与源码镜像区（`mirror/`，见
+ * change add-qa-agent-source）；命中即打印位置并以非零码退出，使构建失败——漏网内容
+ * 物理上无法被发布。
  *
  * 词表缺失或为空视为闸门失效，同样失败（不允许"扫描器空转"通过）。
  * 命中词默认打码：公开仓库的 CI 日志同样公开，不能把要藏的词写进日志。
@@ -24,6 +25,63 @@ const wordsPath = path.join(root, 'GLOSSARY.local.md');
 const REVEAL = process.env.SANITIZE_REVEAL === '1';
 const maskToken = (token) => (REVEAL ? token : `${token.slice(0, 2)}***（${token.length} 字符）`);
 
+/** 硬跳过：词表与处置清单自身就是内部标识的集合，扫它们会让构建永远失败 */
+const IGNORE = ['GLOSSARY.local.md', 'SANITIZE-LIST.local.md'];
+
+/**
+ * 源码镜像区（`mirror/`）的扫描面与排除规则。
+ * 排除项 MUST 显式声明 —— 不依赖"扩展名不匹配"这类隐式排除。
+ */
+const SOURCE_EXTENSIONS = [
+  // 源码
+  '.py', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs',
+  // 配置与声明
+  '.json', '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf', '.spec', '.txt',
+  // 样式与页面
+  '.css', '.scss', '.html', '.svg',
+  // 脚本与容器
+  '.sh', '.bash', '.ps1', '.bat', '.cmd',
+  // 文本类资产
+  '.md', '.sql',
+  // 环境示例（`.env.example` 的 extname 是 `.example`；真实 `.env` 由 IGNORE 与排除目录兜住）
+  '.example',
+];
+
+/** 无扩展名文件白名单：容器构建文件、依赖清单、构建脚本 */
+const SOURCE_NO_EXT = [
+  'Dockerfile', 'Makefile', 'Procfile', 'Vagrantfile', 'Jenkinsfile',
+  'requirements', 'LICENSE', 'NOTICE',
+];
+
+/** 排除目录：构建产物、嵌入运行时、依赖目录、缓存 */
+const EXCLUDED_DIRS = new Set([
+  'node_modules', '.git', 'dist', 'build', 'out', 'target',
+  '__pycache__', '.venv', 'venv', 'site-packages', 'vendor',
+  '.pytest_cache', '.mypy_cache', '.ruff_cache', '.skill-cache', '.cache',
+  'htmlcov', 'coverage', '.next', '.astro', '.turbo', '.nuxt',
+]);
+
+/** 排除扩展名：二进制与媒体（矢量图 `.svg` 按文本扫描——成本低，泄露面大） */
+const EXCLUDED_EXTENSIONS = new Set([
+  // 位图
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.bmp', '.tiff',
+  // 字体
+  '.woff', '.woff2', '.ttf', '.otf', '.eot',
+  // 归档与产物
+  '.pdf', '.zip', '.gz', '.tar', '.tgz', '.7z', '.rar',
+  // 二进制
+  '.exe', '.dll', '.so', '.dylib', '.bin', '.pyc', '.pyo', '.class', '.jar', '.node',
+  // 音视频
+  '.mp3', '.mp4', '.mov', '.avi', '.wav', '.flac', '.ogg', '.webm',
+  // 数据库文件
+  '.db', '.sqlite', '.sqlite3',
+]);
+
+/** 路径中任一层命中排除目录即跳过 */
+function isExcludedPath(rel) {
+  return rel.split('/').some((segment) => EXCLUDED_DIRS.has(segment));
+}
+
 /**
  * 扫描目标：内容、页面与组件的源码、图表源，以及仓库里的说明文档。
  * 规则文档同样公开 —— 早期禁出词表就是写在 `GLOSSARY.md` 与 `openspec/` 里漏出去的，
@@ -36,10 +94,9 @@ const scanRoots = [
   { dir: path.join(root, 'deck'), extensions: ['.mjs', '.js', '.css', '.md'] },
   { dir: root, extensions: ['.md'], deep: false },
   { dir: path.join(root, 'openspec'), extensions: ['.md', '.yaml', '.yml'] },
+  // 源码镜像区：不进构建产物，但它进公开仓库——同样必须过闸门
+  { dir: path.join(root, 'mirror'), extensions: SOURCE_EXTENSIONS, noExt: SOURCE_NO_EXT },
 ];
-
-/** 硬跳过：词表自身命中词表，构建会永远失败 */
-const IGNORE = ['GLOSSARY.local.md'];
 
 /**
  * 豁免清单 —— 经作者确认需要按原文公开的对外文档。
@@ -86,7 +143,7 @@ function parseGlossary(text) {
 /** 递归收集扫描目标文件 */
 async function collectFiles() {
   const files = [];
-  for (const { dir, extensions, deep = true } of scanRoots) {
+  for (const { dir, extensions, noExt = [], deep = true } of scanRoots) {
     let entries = [];
     try {
       entries = await readdir(dir, { recursive: deep, withFileTypes: true });
@@ -99,7 +156,16 @@ async function collectFiles() {
       const full = path.join(entry.parentPath ?? entry.path, entry.name);
       const rel = path.relative(root, full).replace(/\\/g, '/');
       if (IGNORE.includes(rel)) continue;
-      if (extensions.includes(path.extname(entry.name).toLowerCase())) files.push(full);
+      if (isExcludedPath(rel)) continue;
+
+      const ext = path.extname(entry.name).toLowerCase();
+      if (EXCLUDED_EXTENSIONS.has(ext)) continue;
+      if (extensions.includes(ext)) {
+        files.push(full);
+        continue;
+      }
+      // 无扩展名文件只按显式白名单收，避免把杂项文本整片拖进扫描面
+      if (!ext && noExt.includes(entry.name)) files.push(full);
     }
   }
   return files;
@@ -184,7 +250,7 @@ for (const file of files) {
 }
 
 console.log(
-  `[sanitize] 扫描 ${files.length} 个文件 · 精确词 ${exact.length} 条 · 正则 ${patterns.length} 条 · 豁免 ${exemptCount} 个 · 词表来源=${inlineWords ? 'CI secret' : '本地文件'}`,
+  `[sanitize] 扫描 ${files.length} 个文件 · 精确词 ${exact.length} 条 · 正则 ${patterns.length} 条 · 豁免 ${exemptCount} 个 · 排除目录 ${EXCLUDED_DIRS.size} 项 / 排除扩展 ${EXCLUDED_EXTENSIONS.size} 项 · 词表来源=${inlineWords ? 'CI secret' : '本地文件'}`,
 );
 
 if (warnings.length > 0) {
