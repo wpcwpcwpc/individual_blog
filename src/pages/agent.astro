@@ -1,0 +1,174 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import KeyFigures from '../components/KeyFigures.astro';
+import { withBase } from '../utils/base';
+import { listProjects } from '../utils/content';
+
+// Agent作品 = 在线可体验的作品：内容集合里登记了 demoUrl 的项目即入展。
+// 数据与首页精选、项目详情页同源（内容集合是唯一真源），此处不另抄一份。
+const demos = (await listProjects()).filter((project) => project.data.demoUrl);
+---
+
+<BaseLayout
+  title="Agent作品"
+  description="在线可体验的 Agent 作品：不是截图与文字复述，而是正在运行、可以直接上手的服务。"
+>
+  <section class="head shell">
+    <h1>Agent作品</h1>
+    <p class="head__lead">
+      这个板块放"活的"作品——不是截图与文字复述，而是正在运行、可以直接上手的服务。
+    </p>
+  </section>
+
+  {
+    demos.length > 0 ? (
+      <div class="works shell">
+        {demos.map((project) => (
+          <article class="work">
+            <header class="work__head">
+              <h2>{project.data.title}</h2>
+              <p class="work__tagline">{project.data.tagline}</p>
+              {project.data.tags.length > 0 && (
+                <ul class="chips">
+                  {project.data.tags.map((tag) => (
+                    <li>{tag}</li>
+                  ))}
+                </ul>
+              )}
+            </header>
+
+            <KeyFigures figures={project.data.figures} />
+
+            <p class="work__actions">
+              <a
+                class="btn btn--primary"
+                href={project.data.demoUrl}
+                target="_blank"
+                rel="noopener"
+              >
+                打开在线 Demo ↗
+              </a>
+              <a class="btn" href={withBase(`/projects/${project.id}`)}>
+                看设计与取舍
+              </a>
+            </p>
+
+            <aside class="work__note">
+              <p>
+                在线 Demo 经免费内网隧道提供，首次访问会看到 ngrok
+                的安全提示页——点击「Visit Site」即可进入，同一浏览器此后不再提示。
+              </p>
+              <p>隧道为非专职线路，可能间歇离线；离线时可先看项目详解，或邮件联系我重新拉起。</p>
+            </aside>
+          </article>
+        ))}
+      </div>
+    ) : (
+      <p class="empty shell">在线作品筹备中。</p>
+    )
+  }
+</BaseLayout>
+
+<style>
+  .shell {
+    max-width: var(--container);
+    margin-inline: auto;
+    padding-inline: var(--space-4);
+  }
+
+  .head {
+    padding-block: var(--space-5) var(--space-4);
+  }
+
+  .head h1 {
+    margin: 0;
+    font-size: clamp(26px, 3vw + 14px, 40px);
+    line-height: 1.2;
+  }
+
+  .head__lead {
+    max-width: var(--measure);
+    margin: var(--space-3) 0 0;
+    color: var(--color-text-muted);
+  }
+
+  .work {
+    max-width: var(--measure-wide);
+    margin-inline: auto;
+    padding-block: var(--space-5);
+    border-top: 1px solid var(--color-border);
+  }
+
+  .work__head h2 {
+    margin: 0;
+    font-size: var(--text-lg);
+    line-height: var(--leading-tight);
+  }
+
+  .work__tagline {
+    margin: var(--space-2) 0 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+  }
+
+  .work__head .chips {
+    margin-top: var(--space-3);
+  }
+
+  .work__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin: var(--space-5) 0 0;
+  }
+
+  /* 主入口用实底强调，次入口沿用站内胶囊描边（与项目页动作一致） */
+  .btn {
+    display: inline-block;
+    padding: 0.45em 1.1em;
+    border: 1px solid var(--color-accent);
+    border-radius: 999px;
+    font-size: var(--text-sm);
+    color: var(--color-accent);
+    text-decoration: none;
+  }
+
+  .btn:hover {
+    background: var(--color-accent-soft);
+  }
+
+  .btn--primary {
+    background: var(--color-accent);
+    color: #fff;
+    font-weight: 600;
+  }
+
+  .btn--primary:hover {
+    background: var(--color-accent-strong);
+    border-color: var(--color-accent-strong);
+  }
+
+  .work__note {
+    margin: var(--space-4) 0 0;
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+  }
+
+  .work__note p {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+  }
+
+  .work__note p + p {
+    margin-top: var(--space-2);
+  }
+
+  .empty {
+    padding-block: var(--space-5);
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+  }
+</style>

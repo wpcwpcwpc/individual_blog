@@ -18,6 +18,7 @@ export const SITE = {
   nav: [
     { label: '首页', href: '/' },
     { label: '关于', href: '/about' },
+    { label: 'Agent作品', href: '/agent' },
     { label: '源码解析', href: '/claudecode' },
     { label: '简历', href: '/resume' },
   ],
