@@ -1,0 +1,228 @@
+---
+import { existsSync } from 'node:fs';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { withBase } from '../../utils/base';
+import { projectPath } from '../../utils/paths.mjs';
+import { SITE } from '../../site.config';
+import { contact, directions, education, experience, identity, stacks } from '../../data/profile';
+
+// 简历文本页：内容全部来自履历单一真源（src/data/profile.ts），页面只决定排版。
+// 形态分工 —— 这里可选中、可复制、可被搜索引擎与招聘系统读取；PDF 原件在 /resume/pdf。
+// 两份内容的一致性由 scripts/check-resume-sync.mjs 在构建前校验。
+const hasPdf = existsSync(projectPath('public', 'resume', 'resume.pdf'));
+---
+
+<BaseLayout title="简历" description={`${identity.name} 的简历：${directions.join(' / ')}`}>
+  <div class="wrap">
+    <header class="head">
+      <h1>{identity.name}</h1>
+      <p class="head__headline">{identity.headline}</p>
+      <p class="head__meta">{identity.experience} · {identity.location}</p>
+      <ul class="chips">
+        {directions.map((direction) => <li>{direction}</li>)}
+      </ul>
+      <p class="head__contact">
+        <a href={`mailto:${contact.email}`}>{contact.email}</a>
+        <span aria-hidden="true">·</span>
+        <a href={contact.github} rel="me noopener">{contact.github}</a>
+      </p>
+      <p class="head__pdf">
+        {
+          hasPdf ? (
+            <>
+              PDF 原件：<a href={withBase('/resume/pdf')}>在线查看</a>
+              <span aria-hidden="true">·</span>
+              <a href={withBase('/resume/resume.pdf')} download>
+                下载
+              </a>
+            </>
+          ) : (
+            <span class="muted">PDF 原件暂不可用，本页内容完整可用。</span>
+          )
+        }
+      </p>
+    </header>
+
+    <section class="block">
+      <h2>技术栈</h2>
+      <dl class="stack">
+        {
+          stacks.map((group) => (
+            <div class="stack__row">
+              <dt>{group.name}</dt>
+              <dd>
+                <ul class="stack__items">
+                  {group.items.map((item) => (
+                    <li>{item}</li>
+                  ))}
+                </ul>
+              </dd>
+            </div>
+          ))
+        }
+      </dl>
+    </section>
+
+    <section class="block">
+      <h2>工作经历</h2>
+      {
+        experience.map((job) => (
+          <article class="item">
+            <h3>
+              {job.company}
+              <span class="item__title">{job.title}</span>
+            </h3>
+            <p class="item__meta">
+              {job.period}
+              <span aria-hidden="true">·</span>
+              {job.location}
+            </p>
+            <ul class="item__points">
+              {job.highlights.map((point) => (
+                <li>{point}</li>
+              ))}
+            </ul>
+          </article>
+        ))
+      }
+    </section>
+
+    <section class="block">
+      <h2>教育经历</h2>
+      {
+        education.map((school) => (
+          <article class="item">
+            <h3>
+              {school.school}
+              <span class="item__title">{school.degree}</span>
+            </h3>
+            <p class="item__meta">{school.period}</p>
+            <ul class="item__points">
+              {school.notes.map((note) => (
+                <li>{note}</li>
+              ))}
+            </ul>
+          </article>
+        ))
+      }
+    </section>
+
+    <section class="block">
+      <h2>联系</h2>
+      <ul class="item__points">
+        <li>
+          邮箱：<a href={`mailto:${SITE.email}`}>{SITE.email}</a>
+        </li>
+        <li>
+          代码托管：<a href={SITE.github} rel="me noopener">{SITE.github}</a>
+        </li>
+      </ul>
+    </section>
+  </div>
+</BaseLayout>
+
+<style>
+  /* 简历是"要能扫读 + 要能被抓"的页面：正文列宽放宽到宽版，条目用列表而不是表格 */
+  .wrap {
+    max-width: var(--measure-wide);
+    margin-inline: auto;
+  }
+
+  .head {
+    padding-bottom: var(--space-4);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .head h1 {
+    margin: 0;
+    font-size: clamp(26px, 2.6vw + 14px, 38px);
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+  }
+
+  .head__headline {
+    margin: var(--space-3) 0 0;
+    max-width: var(--measure);
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+  }
+
+  .head__meta {
+    margin: var(--space-3) 0 0;
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+  }
+
+  .head .chips {
+    margin-top: var(--space-3);
+  }
+
+  .head__contact,
+  .head__pdf {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin: var(--space-3) 0 0;
+    font-size: var(--text-xs);
+  }
+
+  .block {
+    padding-block: var(--space-5);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .block:last-child {
+    border-bottom: 0;
+  }
+
+  .block h2 {
+    margin: 0 0 var(--space-4);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-text-muted);
+  }
+
+  /* 一段经历：标题行 + 时间行 + 要点列表，三段之间用间距而不是边框分隔 */
+  .item + .item {
+    margin-top: var(--space-5);
+  }
+
+  .item h3 {
+    margin: 0;
+    font-size: var(--text-sm);
+    line-height: var(--leading-tight);
+    color: var(--color-text);
+  }
+
+  .item__title {
+    margin-left: var(--space-2);
+    font-weight: 400;
+    color: var(--color-text-muted);
+  }
+
+  .item__meta {
+    margin: var(--space-1) 0 0;
+    display: flex;
+    gap: var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+  }
+
+  .item__points {
+    margin: var(--space-3) 0 0;
+    padding-left: 1.35em;
+  }
+
+  .item__points li {
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+  }
+
+  .item__points li + li {
+    margin-top: var(--space-2);
+  }
+
+  .muted {
+    color: var(--color-text-faint);
+  }
+</style>

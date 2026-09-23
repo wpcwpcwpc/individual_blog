@@ -1,0 +1,20 @@
+---
+import { loadDiagramSvg } from '../utils/diagram.mjs';
+
+interface Props {
+  /** 图源名（diagrams/<name>.mmd），如 flow-site-pipeline */
+  name: string;
+  /** 图注 */
+  caption?: string;
+  /** 放宽到整行（用于宽图） */
+  wide?: boolean;
+}
+
+const { name, caption, wide = false } = Astro.props;
+const svg = loadDiagramSvg(name);
+---
+
+<figure class:list={['diagram', wide && 'diagram--wide']}>
+  <div set:html={svg} />
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>

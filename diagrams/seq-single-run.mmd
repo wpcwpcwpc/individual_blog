@@ -1,0 +1,17 @@
+%% @desc 一次任务的时序：从提交到产出，途经路由、编排、Agent、工具与闸门、状态写回
+%% 复用位置：项目页 / deck 第 12 页 / PDF
+sequenceDiagram
+    participant U as 使用者
+    participant API as 接口层
+    participant O as 编排器
+    participant A as 专职Agent
+    participant G as 工具与闸门
+    U->>API: 提交任务
+    API->>O: 建会话并判定链路
+    O->>A: 装配定义与工具
+    A->>G: 请求工具调用
+    G-->>A: 结果或拦截指引
+    A-->>O: 阶段性产出
+    O->>O: 状态写回与产物沉淀
+    O-->>API: 流式回传
+    API-->>U: 可见进度与结论

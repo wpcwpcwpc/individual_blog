@@ -1,0 +1,82 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Prose from '../components/Prose.astro';
+import Mermaid from '../components/Mermaid.astro';
+import { withBase } from '../utils/base';
+import { SITE } from '../site.config';
+import { directions, identity } from '../data/profile';
+---
+
+<BaseLayout title="关于" description={`关于 ${SITE.author}`}>
+  <div class="head shell">
+    <h1>关于</h1>
+    <p class="head__tagline">{SITE.tagline}</p>
+  </div>
+
+  <Prose>
+    {identity.intro.map((line) => <p>{line}</p>)}
+
+    <p>
+      这里写两样东西——项目页讲做法与取舍，文章讲踩过的坑与判断依据；
+      身份、能力与经历以 <a href={withBase('/resume')}>简历页</a> 为准，站内不另抄一份。
+    </p>
+
+    <h2>方向</h2>
+    <ul class="chips">
+      {directions.map((direction) => <li>{direction}</li>)}
+    </ul>
+
+    <h2>这个站点</h2>
+    <ul>
+      <li>静态站点，内容以 Markdown 存于版本库，无后端、无追踪</li>
+      <li>项目页记录实践与取舍，文章记录过程与教训</li>
+      <li>图表一图一源，站内各处与 PDF 共用同一份</li>
+    </ul>
+  </Prose>
+
+  <Mermaid name="flow-site-pipeline" caption="内容从写下来到发布，要过几步" wide />
+
+  <Prose>
+    <h2 id="resume">简历</h2>
+    <ul>
+      <li>
+        <a href={withBase('/resume')}>简历文本版</a>（可选中、可复制、可被搜索与招聘系统读取）
+      </li>
+      <li>
+        <a href={withBase('/resume/pdf')}>简历 PDF</a>（原件形态，适合下载、打印与邮件投递）
+      </li>
+      <li>站点本身也是一份简历：项目页讲做法与取舍，文章讲踩过的坑与判断依据</li>
+    </ul>
+
+    <h2>联系</h2>
+    <ul>
+      <li>邮箱：<a href={`mailto:${SITE.email}`}>{SITE.email}</a></li>
+      <li>代码托管：<a href={SITE.github} rel="me noopener">{SITE.github}</a></li>
+    </ul>
+  </Prose>
+</BaseLayout>
+
+<style>
+  .head {
+    max-width: var(--measure);
+    margin-inline: auto;
+    margin-bottom: var(--space-5);
+  }
+
+  h1 {
+    margin: 0;
+    font-size: var(--text-lg);
+  }
+
+  .head__tagline {
+    margin: var(--space-2) 0 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+  }
+
+  /* 方向标签用的是全局 .chips；Prose 里列表默认为长文样式，这里复位成紧凑横排 */
+  .chips {
+    margin: 0;
+    padding: 0;
+  }
+</style>

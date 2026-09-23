@@ -1,0 +1,28 @@
+schema: spec-driven
+
+# Project context (optional)
+# This is shown to AI when creating artifacts.
+context: |
+  personal-site 是个人长期技术门面站点，承载项目展示与技术写作，并作为简历链接的落地目标。
+  首个内容是 QA Agent 平台展示（简历链接落地页 + 深挖文章 + 概览 deck）。
+
+  技术栈：
+  - Astro（静态站点，内容集合驱动）
+  - Markdown / MDX 内容，content collections 管理
+  - Mermaid 图表源（.mmd）构建期转 SVG
+  - Slidev（仅用于生成 deck 静态产物，拷入 public/ 子目录）
+  - Cloudflare Pages 部署（免备案；自定义域名）
+
+  关键约束（MUST）：
+  - 源码唯一真源在本个人仓库；NEVER 从雇主内部仓库引用或复制任何未脱敏内容
+  - 站点内容一律脱敏：禁出词表见 GLOSSARY.md，构建前由 scripts/sanitize-check.mjs 硬拦截
+  - URL 稳定性：/projects/<slug> 为简历引用路径，一经发布不得变更
+  - 域名锚人、路径锚项目：新增项目只追加路径，不改域名与既有路径
+  - 内容全部为 evergreen 表述，禁止出现时效性文案（"正在找工作"等）
+  - 静态、零后端、零数据库；除域名年费外无运行成本
+
+  约定：
+  - 排版规范落在 src/styles/typography.css，不落在口头约定
+  - 图表源存 diagrams/*.mmd，一处绘制多处复用（站内 / deck / PDF）
+  - change 命名 <动词>-<名词> kebab（add/fix/write/package/...）
+  - 规格写作：### Requirement: + #### Scenario:，级别用 SHALL/MUST

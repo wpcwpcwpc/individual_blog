@@ -1,0 +1,152 @@
+---
+import { existsSync } from 'node:fs';
+import BaseLayout from './BaseLayout.astro';
+import KeyFigures from '../components/KeyFigures.astro';
+import Prose from '../components/Prose.astro';
+import { withBase } from '../utils/base';
+import { projectPath } from '../utils/paths.mjs';
+import type { ProjectEntry } from '../utils/content';
+
+interface Props {
+  entry: ProjectEntry;
+}
+
+const { entry } = Astro.props;
+const { title, tagline, summary, tags, updated, figures, demoUrl } = entry.data;
+
+// PDF 是兜底产物（由 npm run pdf 生成），deck 是扫读版（由 deck 构建脚本生成）。
+// 两者都是"锦上添花"：产物存在才出入口，否则显示待补齐状态——不出现死链，也不阻塞发布。
+const hasPdf = existsSync(projectPath('public', 'pdf', `${entry.id}.pdf`));
+const hasDeck = existsSync(projectPath('public', 'deck', entry.id, 'index.html'));
+---
+
+<BaseLayout title={title} description={summary}>
+  <article class="project">
+    <header class="project__head">
+      <h1>{title}</h1>
+      <p class="project__tagline">{tagline}</p>
+      {
+        tags.length > 0 && (
+          <ul class="project__tags">
+            {tags.map((tag) => (
+              <li>{tag}</li>
+            ))}
+          </ul>
+        )
+      }
+      {
+        updated && (
+          <p class="project__meta">
+            最近更新 <time datetime={updated.toISOString().slice(0, 10)}>
+              {updated.toISOString().slice(0, 10)}
+            </time>
+          </p>
+        )
+      }
+      <p class="project__actions">
+        {
+          demoUrl && (
+            <a class="project__action" href={demoUrl} target="_blank" rel="noopener">
+              在线演示 ↗
+            </a>
+          )
+        }
+        {
+          hasPdf ? (
+            <a class="project__action" href={withBase(`/pdf/${entry.id}.pdf`)} download>
+              下载 PDF
+            </a>
+          ) : (
+            <span class="project__action project__action--pending">PDF 生成中</span>
+          )
+        }
+        {
+          hasDeck ? (
+            <a class="project__action" href={withBase(`/deck/${entry.id}/`)}>
+              扫读版 deck
+            </a>
+          ) : (
+            <span class="project__action project__action--pending">deck 待补齐</span>
+          )
+        }
+      </p>
+    </header>
+
+    <KeyFigures figures={figures} />
+
+    <Prose wide>
+      <slot />
+    </Prose>
+  </article>
+</BaseLayout>
+
+<style>
+  .project__head {
+    max-width: var(--measure-wide);
+    margin-inline: auto;
+    margin-bottom: var(--space-6);
+    padding-bottom: var(--space-4);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  h1 {
+    margin: 0;
+    font-size: var(--text-lg);
+    line-height: var(--leading-tight);
+  }
+
+  .project__tagline {
+    margin: var(--space-2) 0 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+  }
+
+  .project__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin: var(--space-3) 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: var(--text-xs);
+  }
+
+  .project__tags li {
+    padding: 0.15em 0.6em;
+    border-radius: 999px;
+    background: var(--color-accent-soft);
+    color: var(--color-accent-strong);
+  }
+
+  .project__meta {
+    margin: var(--space-3) 0 0;
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+  }
+
+  .project__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin: var(--space-3) 0 0;
+    font-size: var(--text-xs);
+  }
+
+  .project__action {
+    display: inline-block;
+    padding: 0.25em 0.7em;
+    border: 1px solid var(--color-accent);
+    border-radius: 999px;
+    color: var(--color-accent);
+    text-decoration: none;
+  }
+
+  .project__action:hover {
+    background: var(--color-accent-soft);
+  }
+
+  .project__action--pending {
+    border-color: var(--color-border);
+    color: var(--color-text-faint);
+  }
+</style>

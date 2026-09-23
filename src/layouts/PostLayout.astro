@@ -1,0 +1,89 @@
+---
+import BaseLayout from './BaseLayout.astro';
+import Prose from '../components/Prose.astro';
+import { withBase } from '../utils/base';
+import type { PostEntry } from '../utils/content';
+
+interface Props {
+  entry: PostEntry;
+}
+
+const { entry } = Astro.props;
+const { title, summary, publishedAt, updated, tags } = entry.data;
+const published = publishedAt.toISOString().slice(0, 10);
+const revised = updated?.toISOString().slice(0, 10);
+---
+
+<BaseLayout title={title} description={summary}>
+  <article class="post">
+    <header class="post__head">
+      <h1>{title}</h1>
+      <p class="post__meta">
+        <time datetime={published}>{published}</time>
+        {revised && revised !== published && <span>（修订 {revised}）</span>}
+      </p>
+      {
+        tags.length > 0 && (
+          <ul class="post__tags">
+            {tags.map((tag) => (
+              <li>{tag}</li>
+            ))}
+          </ul>
+        )
+      }
+    </header>
+
+    <Prose>
+      <slot />
+    </Prose>
+
+    <footer class="post__foot">
+      <a href={withBase('/')}>← 回到首页</a>
+    </footer>
+  </article>
+</BaseLayout>
+
+<style>
+  .post__head {
+    max-width: var(--measure);
+    margin-inline: auto;
+    margin-bottom: var(--space-5);
+  }
+
+  h1 {
+    margin: 0;
+    font-size: var(--text-lg);
+    line-height: var(--leading-tight);
+  }
+
+  .post__meta {
+    margin: var(--space-2) 0 0;
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+  }
+
+  .post__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin: var(--space-3) 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: var(--text-xs);
+  }
+
+  .post__tags li {
+    padding: 0.15em 0.6em;
+    border-radius: 999px;
+    background: var(--color-surface-2);
+    color: var(--color-text-muted);
+  }
+
+  .post__foot {
+    max-width: var(--measure);
+    margin: var(--space-6) auto 0;
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--color-border);
+    font-size: var(--text-xs);
+  }
+</style>

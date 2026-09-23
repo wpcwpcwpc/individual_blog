@@ -1,0 +1,168 @@
+---
+import { SITE } from '../site.config';
+import { withBase } from '../utils/base';
+import '../styles/theme.css';
+import '../styles/typography.css';
+
+interface Props {
+  /** 页面标题；首页不传，使用站点名 + 定位 */
+  title?: string;
+  description?: string;
+  /** OG 分享图路径（站内绝对路径，如 /og/default.png） */
+  ogImage?: string;
+}
+
+const { title, description = SITE.description, ogImage = '/og/default.png' } = Astro.props;
+
+const pageTitle = title ? `${title} · ${SITE.name}` : `${SITE.name} · ${SITE.tagline}`;
+const origin = Astro.site ?? Astro.url;
+const canonical = new URL(Astro.url.pathname, origin).href;
+const ogImageUrl = new URL(withBase(ogImage), origin).href;
+const currentPath = Astro.url.pathname;
+---
+
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{pageTitle}</title>
+    <meta name="description" content={description} />
+    <meta name="author" content={SITE.author} />
+    <link rel="canonical" href={canonical} />
+
+    <link rel="icon" href={withBase('/favicon.svg')} type="image/svg+xml" />
+
+    <meta property="og:type" content={currentPath === '/' ? 'website' : 'article'} />
+    <meta property="og:site_name" content={SITE.name} />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImageUrl} />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+
+  <body>
+    <a class="skip" href="#main">跳到正文</a>
+
+    <header class="site-header">
+      <div class="shell">
+        <a class="brand" href={withBase('/')}>{SITE.name}</a>
+        <nav class="nav" aria-label="站点导航">
+          {
+            SITE.nav.map((item) => {
+              const href = withBase(item.href);
+              const active =
+                item.href === '/'
+                  ? currentPath === withBase('/')
+                  : currentPath.startsWith(href);
+              return (
+                <a href={href} aria-current={active ? 'page' : undefined}>
+                  {item.label}
+                </a>
+              );
+            })
+          }
+        </nav>
+      </div>
+    </header>
+
+    <main id="main">
+      <slot />
+    </main>
+
+    <footer class="site-footer">
+      <div class="shell">
+        <p class="footer-line">
+          <a href={`mailto:${SITE.email}`}>{SITE.email}</a>
+          <span aria-hidden="true">·</span>
+          <a href={SITE.github} rel="me noopener">代码托管</a>
+        </p>
+        <p class="footer-note">© {new Date().getFullYear()} {SITE.author}</p>
+      </div>
+    </footer>
+
+    <style>
+      .shell {
+        max-width: var(--container);
+        margin-inline: auto;
+        padding-inline: var(--space-4);
+      }
+
+      .skip {
+        position: absolute;
+        left: -9999px;
+        top: 0;
+        background: var(--color-accent);
+        color: #fff;
+        padding: var(--space-2) var(--space-3);
+        z-index: 10;
+      }
+
+      .skip:focus {
+        left: 0;
+      }
+
+      .site-header {
+        border-bottom: 1px solid var(--color-border);
+        background: var(--color-bg);
+      }
+
+      .site-header .shell {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-3);
+        min-height: 4rem;
+        flex-wrap: wrap;
+      }
+
+      .brand {
+        font-size: var(--text-sm);
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        color: var(--color-text);
+        text-decoration: none;
+      }
+
+      .nav {
+        display: flex;
+        gap: var(--space-4);
+        font-size: var(--text-xs);
+      }
+
+      .nav a {
+        color: var(--color-text-muted);
+        text-decoration: none;
+      }
+
+      .nav a:hover,
+      .nav a[aria-current='page'] {
+        color: var(--color-accent);
+      }
+
+      main {
+        padding-block: var(--space-6);
+      }
+
+      .site-footer {
+        border-top: 1px solid var(--color-border);
+        padding-block: var(--space-4);
+        background: var(--color-surface);
+      }
+
+      .footer-line {
+        margin: 0;
+        display: flex;
+        gap: var(--space-2);
+        font-size: var(--text-xs);
+      }
+
+      .footer-note {
+        margin: var(--space-2) 0 0;
+        font-size: var(--text-xs);
+        color: var(--color-text-faint);
+      }
+    </style>
+  </body>
+</html>

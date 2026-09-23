@@ -1,0 +1,201 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { withBase } from '../../utils/base';
+import { listSeriesBundles, listStandalonePosts } from '../../utils/content';
+
+/**
+ * 文章列表页：/posts（第 1 页）与 /posts/<n>（后续页）。
+ * 分两区：专栏出卡片（内容成体系，进专区页读），单篇出列表（按发布时间倒序分页）。
+ * 全站"专栏 / 单篇"的划分只由 utils/content 决定，此处不重复筛选逻辑。
+ */
+export async function getStaticPaths({ paginate }) {
+  const posts = await listStandalonePosts();
+  return paginate(posts, { pageSize: 10 });
+}
+
+const { page } = Astro.props;
+const series = await listSeriesBundles();
+---
+
+<BaseLayout title="文章" description="专栏与单篇技术文章。">
+  <section class="head shell">
+    <h1>文章</h1>
+    <p class="head__desc">成体系的读专栏，单点经验读单篇。</p>
+  </section>
+
+  {
+    series.length > 0 && (
+      <section class="section shell">
+        <h2>专栏</h2>
+        <ul class="cards">
+          {series.map((bundle) => (
+            <li class="card">
+              <a href={withBase('/claudecode')}>
+                <h3>{bundle.series.title}</h3>
+                <p class="card__tagline">共 {bundle.chapters.length} 章 · 按章节顺序阅读</p>
+                <p class="card__summary">{bundle.series.description}</p>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </section>
+    )
+  }
+
+  <section class="section shell">
+    <h2>单篇</h2>
+    {
+      page.data.length > 0 ? (
+        <ul class="plain">
+          {page.data.map((post) => (
+            <li>
+              <a href={withBase(`/posts/${post.id}`)}>{post.data.title}</a>
+              <span class="plain__desc">{post.data.summary}</span>
+              <time class="plain__date" datetime={post.data.publishedAt.toISOString().slice(0, 10)}>
+                {post.data.publishedAt.toISOString().slice(0, 10)}
+              </time>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p class="empty">暂无文章。</p>
+      )
+    }
+    {
+      page.lastPage > 1 && (
+        <nav class="pager">
+          {page.url.prev ? <a href={page.url.prev}>← 上一页</a> : <span />}
+          <span class="pager__pos">
+            第 {page.currentPage} / {page.lastPage} 页
+          </span>
+          {page.url.next ? <a href={page.url.next}>下一页 →</a> : <span />}
+        </nav>
+      )
+    }
+  </section>
+</BaseLayout>
+
+<style>
+  .shell {
+    max-width: var(--container);
+    margin-inline: auto;
+    padding-inline: var(--space-4);
+  }
+
+  .head {
+    padding-block: var(--space-5) var(--space-4);
+  }
+
+  .head h1 {
+    margin: 0;
+    font-size: clamp(26px, 3vw + 14px, 40px);
+    line-height: 1.2;
+  }
+
+  .head__desc {
+    margin: var(--space-3) 0 0;
+    color: var(--color-text-muted);
+  }
+
+  .section {
+    padding-block: var(--space-5);
+    border-top: 1px solid var(--color-border);
+  }
+
+  .section h2 {
+    margin: 0 0 var(--space-4);
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    font-weight: 600;
+  }
+
+  .cards {
+    display: grid;
+    gap: var(--space-4);
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .card {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-bg);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .card:hover {
+    border-color: var(--color-accent);
+    box-shadow: var(--shadow);
+  }
+
+  .card a {
+    display: block;
+    padding: var(--space-4);
+    text-decoration: none;
+    color: inherit;
+  }
+
+  .card h3 {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--color-accent);
+  }
+
+  .card__tagline {
+    margin: var(--space-2) 0 0;
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+  }
+
+  .card__summary {
+    margin: var(--space-3) 0 0;
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+  }
+
+  .plain {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .plain li {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-3);
+    align-items: baseline;
+    padding-block: var(--space-3);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .plain__desc {
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+  }
+
+  .plain__date {
+    margin-left: auto;
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+  }
+
+  .empty {
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+  }
+
+  .pager {
+    display: flex;
+    gap: var(--space-3);
+    align-items: baseline;
+    justify-content: space-between;
+    margin-top: var(--space-4);
+    font-size: var(--text-xs);
+  }
+
+  .pager__pos {
+    color: var(--color-text-faint);
+  }
+</style>

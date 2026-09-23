@@ -1,0 +1,17 @@
+%% @desc 工程流程：提案 → 设计 → 任务拆分 → 规格定稿 → 实现落地 → 逐条验收 → 归档为参照
+%% 复用位置：项目页取舍段 / 文章一 / deck 第 10 页
+flowchart TB
+    subgraph R1[一·先写清楚]
+        direction LR
+        P[提案需求] --> D[设计决策] --> T[任务拆分]
+    end
+    subgraph R2[二·再做与验收]
+        direction LR
+        S[规格定稿] --> I[实现落地] --> V[逐条验收]
+    end
+    subgraph R3[三·并入基线]
+        A[归档为参照]
+    end
+    R1 --> R2 --> R3
+    V -->|不通过| I
+    A -.->|成为下一次的参照| P

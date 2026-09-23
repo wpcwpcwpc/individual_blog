@@ -1,0 +1,76 @@
+---
+interface Props {
+  /** 放宽列宽（用于含宽图/表的页面），默认按 68ch 正文列宽 */
+  wide?: boolean;
+}
+
+const { wide = false } = Astro.props;
+---
+
+<div class:list={['prose', wide && 'prose--wide']}>
+  <slot />
+</div>
+
+<style is:global>
+  /* 长文排版统一容器：内容侧不写任何排版样式，规则全部在此处 */
+  .prose {
+    max-width: var(--measure);
+    margin-inline: auto;
+  }
+
+  .prose--wide {
+    max-width: var(--measure-wide);
+  }
+
+  .prose > * + * {
+    margin-top: var(--space-4);
+  }
+
+  .prose h2,
+  .prose h3,
+  .prose h4 {
+    line-height: var(--leading-tight);
+    margin-top: var(--space-6);
+    margin-bottom: 0;
+  }
+
+  .prose h2 {
+    font-size: var(--text-lg);
+    padding-bottom: var(--space-2);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .prose h3 {
+    font-size: var(--text-base);
+  }
+
+  .prose h4 {
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+  }
+
+  .prose p,
+  .prose li {
+    color: var(--color-text);
+  }
+
+  .prose ul,
+  .prose ol {
+    padding-left: 1.35em;
+  }
+
+  /* 列表项留出呼吸感：密度约束的视觉一半（每屏要点 ≤5，超出应改写或拆分） */
+  .prose li + li {
+    margin-top: var(--space-2);
+  }
+
+  .prose li > p {
+    margin: 0;
+  }
+
+  .prose small,
+  .prose figcaption {
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+  }
+</style>

@@ -1,0 +1,48 @@
+/* 设计令牌 —— 全站颜色、间距、字体栈的唯一真源。
+   规则：组件与内容 MUST NOT 硬编码颜色值，一律引用此处变量。 */
+
+:root {
+  /* 字体栈 */
+  --font-sans: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei",
+    "Noto Sans SC", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas,
+    "Liberation Mono", monospace;
+
+  /* 主色（唯一强调色） */
+  --color-accent: hsl(221 83% 53%);
+  --color-accent-strong: hsl(221 83% 42%);
+  --color-accent-soft: hsl(221 83% 96%);
+
+  /* 灰阶 */
+  --color-bg: hsl(0 0% 100%);
+  --color-surface: hsl(220 20% 98%);
+  --color-surface-2: hsl(220 16% 95%);
+  --color-border: hsl(220 16% 89%);
+  --color-border-strong: hsl(220 14% 78%);
+  --color-text: hsl(222 22% 16%);
+  --color-text-muted: hsl(220 12% 42%);
+  --color-text-faint: hsl(220 10% 56%);
+
+  /* 度量 */
+  --measure: 68ch;
+  --measure-wide: 82ch;
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 16px;
+
+  /* 间距刻度 */
+  --space-1: 0.375rem;
+  --space-2: 0.625rem;
+  --space-3: 1rem;
+  --space-4: 1.5rem;
+  --space-5: 2.25rem;
+  --space-6: 3.5rem;
+  --space-7: 5rem;
+
+  /* 阴影 */
+  --shadow-sm: 0 1px 2px hsl(222 22% 16% / 6%);
+  --shadow: 0 4px 16px hsl(222 22% 16% / 7%);
+
+  /* 版心 */
+  --container: 68rem;
+}

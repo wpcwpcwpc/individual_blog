@@ -1,0 +1,119 @@
+---
+import BaseLayout from './BaseLayout.astro';
+import Prose from '../components/Prose.astro';
+import { withBase } from '../utils/base';
+import type { Series } from '../series';
+import type { PostEntry } from '../utils/content';
+
+/**
+ * 章节页布局 —— 专栏章节专用：正文排版与文章页共用 Prose，
+ * 差异只在头部元数据行与底部导航（上/下篇 + 回专栏）。
+ */
+interface Props {
+  entry: PostEntry;
+  series: Series;
+  group: string;
+  order: number;
+  prev?: PostEntry;
+  next?: PostEntry;
+}
+
+const { entry, series, group, order, prev, next } = Astro.props;
+const { title, summary, publishedAt, readingMinutes, weight } = entry.data;
+const published = publishedAt.toISOString().slice(0, 10);
+
+/** 章节页 URL 去掉文件名里的专栏前缀，与导入脚本的链接改写保持一致 */
+const chapterUrl = (post: PostEntry) =>
+  withBase(`/claudecode/${post.id.replace(`${post.data.series}-`, '')}`);
+---
+
+<BaseLayout title={`${title} · ${series.title}`} description={summary}>
+  <article class="chapter">
+    <header class="chapter__head">
+      <p class="chapter__series">
+        <a href={withBase('/claudecode')}>{series.title}</a>
+        <span class="chapter__sep">/</span>
+        <span>{group}</span>
+      </p>
+      <h1>{title}</h1>
+      <p class="chapter__meta">
+        <span>第 {order} 章</span>
+        {readingMinutes && <span>阅读约 {readingMinutes} 分钟</span>}
+        {weight && <span>{'⭐'.repeat(weight)}</span>}
+        <time datetime={published}>更新 {published}</time>
+      </p>
+    </header>
+
+    <Prose>
+      <slot />
+    </Prose>
+
+    <footer class="chapter__foot">
+      <a href={withBase('/claudecode')}>← 返回专栏目录</a>
+      <nav class="chapter__nav">
+        {prev && <a href={chapterUrl(prev)}>上一篇 · {prev.data.title}</a>}
+        {next && <a href={chapterUrl(next)}>下一篇 · {next.data.title}</a>}
+      </nav>
+    </footer>
+  </article>
+</BaseLayout>
+
+<style is:global>
+  /* 长文以代码块与 ASCII 图为骨架，放宽默认的 15 行封顶，仍保留上限 */
+  .chapter .prose pre {
+    max-height: calc(40 * 1.55em);
+  }
+</style>
+
+<style>
+  .chapter__head {
+    max-width: var(--measure);
+    margin-inline: auto;
+    margin-bottom: var(--space-5);
+  }
+
+  .chapter__series {
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+  }
+
+  .chapter__sep {
+    padding-inline: 0.4em;
+    color: var(--color-text-faint);
+  }
+
+  h1 {
+    margin: 0;
+    font-size: var(--text-lg);
+    line-height: var(--leading-tight);
+  }
+
+  .chapter__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-3);
+    margin: var(--space-2) 0 0;
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+  }
+
+  .chapter__foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    justify-content: space-between;
+    max-width: var(--measure);
+    margin: var(--space-6) auto 0;
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--color-border);
+    font-size: var(--text-xs);
+  }
+
+  .chapter__nav {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    text-align: right;
+  }
+</style>

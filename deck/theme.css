@@ -1,0 +1,223 @@
+/* deck 主题 —— 与站点同一套色彩与排版约束：一主色 + 灰阶，正文 ≥ 20px，单页要点 ≤5 条 */
+
+:root {
+  --accent: hsl(221 83% 53%);
+  --accent-soft: hsl(221 83% 96%);
+  --ink: hsl(222 22% 12%);
+  --ink-muted: hsl(220 12% 38%);
+  --ink-faint: hsl(220 10% 55%);
+  --line: hsl(220 16% 88%);
+  --surface: hsl(210 20% 98%);
+  --bg: #ffffff;
+  --text-base: clamp(20px, 1.5vw + 14px, 26px);
+  --text-sm: clamp(16px, 0.8vw + 13px, 19px);
+  --text-xs: clamp(14px, 0.5vw + 12px, 16px);
+  --leading: 1.7;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-snap-type: y mandatory;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: var(--text-base) / var(--leading) system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei',
+    'Noto Sans SC', sans-serif;
+}
+
+/* ── 一页一屏 ──── */
+
+.slide {
+  min-height: 100vh;
+  scroll-snap-align: start;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(16px, 2vw, 28px);
+  padding: clamp(24px, 5vw, 72px) clamp(20px, 6vw, 88px);
+  border-bottom: 1px solid var(--line);
+}
+
+.slide__index {
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(30px, 3.2vw, 46px);
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+h2 {
+  margin: 0;
+  font-size: clamp(24px, 2.2vw, 34px);
+  line-height: 1.3;
+}
+
+.slide__sub {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+/* ── 要点：单页不超过 5 条 ──── */
+
+.points {
+  margin: 0;
+  padding-left: 1.2em;
+  max-width: 62ch;
+}
+
+.points li + li {
+  margin-top: 0.7em;
+}
+
+.points strong {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ── 关键数字 ──── */
+
+.figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: clamp(12px, 1.6vw, 22px);
+  margin: 0;
+}
+
+.figure {
+  padding: clamp(12px, 1.4vw, 18px);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.figure dt {
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+}
+
+.figure dd {
+  margin: 0.3em 0 0;
+  font-size: clamp(22px, 1.8vw, 30px);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+/* ── 图：与站点共用同一批 SVG，这里只是引用产物 ──── */
+
+.fig {
+  margin: 0;
+  padding: clamp(8px, 1vw, 14px);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow-x: auto;
+}
+
+.fig svg {
+  display: block;
+  width: 100%;
+  /* 与站点同一策略：窄屏不把图缩到看不清，而是让图自己横向滚动 */
+  min-width: 40rem;
+  height: auto;
+  /* 宽屏反过来要给高度上限，否则单页会超出一屏（SVG 保持比例，只在框内居中缩放） */
+  max-height: 50vh;
+}
+
+.fig figcaption {
+  margin-top: 0.5em;
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+}
+
+/* ── 首尾页 ──── */
+
+.slide--cover {
+  background: linear-gradient(160deg, var(--accent-soft), var(--bg) 60%);
+}
+
+.slide--cover .meta {
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+.slide--cover .meta a {
+  color: var(--accent);
+}
+
+.slide--end .points a {
+  color: var(--accent);
+}
+
+/* ── 进度与页码（不参与打印） ──── */
+
+.progress {
+  position: fixed;
+  inset: auto 0 0 0;
+  height: 3px;
+  background: var(--line);
+}
+
+.progress__bar {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.18s ease-out;
+}
+
+.pager {
+  position: fixed;
+  right: clamp(12px, 2vw, 24px);
+  bottom: clamp(12px, 2vw, 22px);
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+}
+
+.pager button {
+  width: 2.2em;
+  height: 2.2em;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--ink-muted);
+  font-size: inherit;
+  cursor: pointer;
+}
+
+.pager button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+@media print {
+  html {
+    scroll-snap-type: none;
+  }
+
+  .slide {
+    min-height: auto;
+    border-bottom: none;
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .progress,
+  .pager {
+    display: none;
+  }
+}

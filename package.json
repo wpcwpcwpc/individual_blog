@@ -1,0 +1,36 @@
+{
+  "name": "personal-site",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "predev": "node scripts/build-diagrams.mjs",
+    "dev": "astro dev",
+    "sanitize": "node scripts/sanitize-check.mjs",
+    "figures": "node scripts/check-figures.mjs",
+    "series": "node scripts/check-series.mjs",
+    "import:series": "node scripts/import-series.mjs",
+    "pdf-audit": "node scripts/check-pdf.mjs",
+    "resume-sync": "node scripts/check-resume-sync.mjs",
+    "diagrams": "node scripts/build-diagrams.mjs",
+    "deck": "node scripts/build-deck.mjs",
+    "og": "node scripts/build-og.mjs",
+    "build": "npm run sanitize && npm run figures && npm run series && npm run pdf-audit && npm run resume-sync && npm run diagrams && npm run deck && npm run og && astro build",
+    "preview": "astro preview",
+    "pdf": "node scripts/build-pdf.mjs",
+    "check": "node scripts/check-links.mjs",
+    "mobile": "node scripts/mobile-check.mjs",
+    "deploy": "npm run build && npm run pdf && npm run build && npm run check && node scripts/deploy.mjs"
+  },
+  "dependencies": {
+    "@astrojs/sitemap": "^3.7.4",
+    "astro": "^7.3.2",
+    "pdfjs-dist": "^6.3.289"
+  },
+  "devDependencies": {
+    "@astrojs/markdown-remark": "^7.3.1",
+    "jsdom": "^30.0.1",
+    "mermaid": "^12.0.0",
+    "sharp": "^0.35.4"
+  }
+}

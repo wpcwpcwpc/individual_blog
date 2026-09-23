@@ -1,0 +1,68 @@
+---
+import type { ProjectEntry } from '../utils/content';
+
+interface Props {
+  /** 项目页 frontmatter 的 figures（口径登记来源见 GLOSSARY.md 第三节） */
+  figures: ProjectEntry['data']['figures'];
+}
+
+const { figures } = Astro.props;
+---
+
+{
+  figures.length > 0 && (
+    <section class="figures" aria-label="关键数字">
+      <dl class="figures__list">
+        {figures.map((figure) => (
+          <div class="figures__item">
+            <dt>{figure.label}</dt>
+            <dd>{figure.value}</dd>
+          </div>
+        ))}
+      </dl>
+      <p class="figures__note">指标已脱敏，均为区间或量级表述</p>
+    </section>
+  )
+}
+
+<style>
+  .figures {
+    max-width: var(--measure-wide);
+    margin-inline: auto;
+    margin-bottom: var(--space-5);
+    padding: var(--space-4) var(--space-4) var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+  }
+
+  .figures__list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+    gap: var(--space-4);
+    margin: 0;
+  }
+
+  .figures__item {
+    min-width: 0;
+  }
+
+  .figures__item dt {
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+  }
+
+  .figures__item dd {
+    margin: var(--space-1) 0 0;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-text);
+    line-height: var(--leading-tight);
+  }
+
+  .figures__note {
+    margin: var(--space-3) 0 0;
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+  }
+</style>

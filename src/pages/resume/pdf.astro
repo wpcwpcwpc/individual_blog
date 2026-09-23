@@ -1,0 +1,279 @@
+---
+import { existsSync } from 'node:fs';
+import { withBase } from '../../utils/base';
+import { projectPath } from '../../utils/paths.mjs';
+import { SITE } from '../../site.config';
+
+// 简历 PDF 形态：整页渲染 PDF 原文。裸文档、不套站点导航与页脚，避免任何额外元素干扰阅读。
+// 阅读形态在 /resume（文本页，可复制、可被检索）；这里负责原件与投递场景。
+// 渲染走 pdf.js：桌面与移动端都能内联翻页（iOS Safari 等不内联 PDF 的内核同样可用）。
+const hasPdf = existsSync(projectPath('public', 'resume', 'resume.pdf'));
+const pdfUrl = hasPdf ? withBase('/resume/resume.pdf') : '';
+const favicon = withBase('/favicon.svg');
+---
+
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>简历 PDF · {SITE.author}</title>
+    <meta name="description" content={`${SITE.author} 的简历 PDF 原件`} />
+    <link rel="icon" type="image/svg+xml" href={favicon} />
+    <!-- 独立文档、无布局套壳，样式全局生效：canvas 由 JS 创建，作用域样式选不中它 -->
+    <style is:global>
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: #525659; /* PDF 阅读器同款底色 */
+        -webkit-text-size-adjust: 100%;
+      }
+
+      .bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.75rem;
+        max-width: 52rem;
+        margin: 0 auto;
+        padding: 0.75rem 0.75rem 0;
+        font: 400 14px/1.6 system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+      }
+
+      .bar a {
+        color: #e8e8e8;
+        text-decoration: none;
+        border-bottom: 1px solid rgb(232 232 232 / 40%);
+      }
+
+      .bar a:hover {
+        border-bottom-color: #e8e8e8;
+      }
+
+      .bar__spacer {
+        margin-left: auto;
+      }
+
+      .track {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        max-width: 52rem;
+        margin: 0 auto;
+        padding: 0.75rem;
+      }
+
+      .page {
+        width: 100%;
+        background: #fff;
+        box-shadow: 0 1px 12px rgb(0 0 0 / 35%);
+      }
+
+      .page canvas {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
+      .hint,
+      .missing {
+        margin: 0;
+        padding: 2rem 0;
+        color: #e8e8e8;
+        font: 400 14px/1.6 system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+        text-align: center;
+      }
+
+      .fallback {
+        display: block;
+        width: 100%;
+        height: 100vh;
+        border: 0;
+      }
+
+      @media (min-width: 40rem) {
+        .track {
+          gap: 1.25rem;
+          padding: 1.25rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="bar">
+      <a href={withBase('/resume')}>← 返回文本版</a>
+      {
+        hasPdf && (
+          <a class="bar__spacer" href={pdfUrl} download>
+            下载 PDF 原件
+          </a>
+        )
+      }
+    </div>
+
+    {
+      hasPdf ? (
+        <div id="resume-viewer" data-src={pdfUrl} data-author={SITE.author}>
+          <div class="track" id="resume-track">
+            <p class="hint" id="resume-hint">正在加载简历…</p>
+          </div>
+        </div>
+      ) : (
+        <p class="missing">
+          简历文件暂不可用。<a href={withBase('/resume')}>看文本版 →</a>
+        </p>
+      )
+    }
+
+    <noscript>
+      {
+        hasPdf && (
+          <object class="fallback" data={pdfUrl} type="application/pdf" aria-label={`${SITE.author} 的简历`}>
+            <a href={pdfUrl}>{SITE.author} 的简历（PDF）</a>
+          </object>
+        )
+      }
+    </noscript>
+
+    <script>
+      // pdf.js 逐页把 PDF 画进 canvas：移动端不内联 PDF 的浏览器也能直接翻看。
+      // 用 legacy 构建覆盖较旧内核；解析在独立 worker 线程（滚动不卡）；页面按可视区懒渲染。
+      import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
+      import workerSrc from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
+
+      pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
+
+      const MAX_DPR = 2;
+
+      async function mount(root, track) {
+        const url = root.dataset.src;
+        const author = root.dataset.author ?? '';
+        const hint = track.querySelector('#resume-hint');
+
+        /** 渲染失败时退回浏览器内置阅读器，避免页面空白 */
+        const fallback = (err) => {
+          console.warn('[resume] pdf.js 渲染失败，回退到浏览器内置阅读器', err);
+          const embed = document.createElement('object');
+          embed.type = 'application/pdf';
+          embed.data = url;
+          embed.className = 'fallback';
+          embed.setAttribute('aria-label', `${author} 的简历`);
+          track.replaceChildren(embed);
+        };
+
+        const doc = await pdfjs.getDocument({ url }).promise;
+        const pages = [];
+        let scale = 1;
+
+        for (let num = 1; num <= doc.numPages; num += 1) {
+          const page = await doc.getPage(num);
+          const size = page.getViewport({ scale: 1 });
+
+          const wrap = document.createElement('div');
+          wrap.className = 'page';
+          wrap.style.aspectRatio = `${size.width} / ${size.height}`;
+
+          const canvas = document.createElement('canvas');
+          canvas.setAttribute('role', 'img');
+          canvas.setAttribute('aria-label', `${author} 简历第 ${num} 页`);
+          wrap.append(canvas);
+
+          track.append(wrap);
+          pages.push({ page, wrap, canvas, width: size.width, painted: false, at: 0, task: null });
+        }
+
+        const fit = () => {
+          const style = getComputedStyle(track);
+          const avail = track.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+          scale = avail > 0 ? avail / pages[0].width : 1;
+        };
+
+        const paint = (item) => {
+          if (item.task || (item.painted && item.at === scale)) {
+            return item.task;
+          }
+          const target = scale;
+          item.task = (async () => {
+            const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
+            const viewport = item.page.getViewport({ scale: target });
+            item.canvas.width = Math.floor(viewport.width * dpr);
+            item.canvas.height = Math.floor(viewport.height * dpr);
+            const params = { canvasContext: item.canvas.getContext('2d'), viewport };
+            if (dpr !== 1) {
+              params.transform = [dpr, 0, 0, dpr, 0, 0];
+            }
+            const task = item.page.render(params);
+            item.render = task;
+            await task.promise;
+            item.painted = true;
+            item.at = target;
+          })()
+            .catch((err) => {
+              if (err?.name !== 'RenderingCancelledException') {
+                fallback(err);
+              }
+            })
+            .finally(() => {
+              item.task = null;
+            });
+          return item.task;
+        };
+
+        const visible = new IntersectionObserver(
+          (entries) => {
+            for (const entry of entries) {
+              if (entry.isIntersecting) {
+                paint(pages.find((item) => item.wrap === entry.target));
+              }
+            }
+          },
+          { rootMargin: '800px 0px' },
+        );
+
+        fit();
+        for (const item of pages) {
+          visible.observe(item.wrap);
+        }
+        await paint(pages[0]);
+        hint?.remove();
+
+        let timer = 0;
+        window.addEventListener('resize', () => {
+          clearTimeout(timer);
+          timer = setTimeout(() => {
+            const previous = scale;
+            fit();
+            if (scale === previous) {
+              return;
+            }
+            // 缩放变了：取消在途渲染，已画过的页按新像素重画，其余交给观察器
+            for (const item of pages) {
+              item.render?.cancel();
+              item.at = 0;
+            }
+            for (const item of pages) {
+              if (item.painted) {
+                item.painted = false;
+                paint(item);
+              }
+            }
+          }, 180);
+        });
+      }
+
+      const root = document.getElementById('resume-viewer');
+      const track = document.getElementById('resume-track');
+      if (root && track) {
+        mount(root, track).catch((err) => {
+          console.warn('[resume] pdf.js 初始化失败', err);
+          const embed = document.createElement('object');
+          embed.type = 'application/pdf';
+          embed.data = root.dataset.src;
+          embed.className = 'fallback';
+          track.replaceChildren(embed);
+        });
+      }
+    </script>
+  </body>
+</html>

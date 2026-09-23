@@ -1,0 +1,50 @@
+---
+import { render } from 'astro:content';
+import SeriesChapterLayout from '../../layouts/SeriesChapterLayout.astro';
+import { getSeriesBundle, listPosts, neighborsOf, type PostEntry } from '../../utils/content';
+
+/**
+ * 章节页：/claudecode/<NN>-<slug>（文件名里的专栏前缀在 URL 中去掉）。
+ * 章节由文章集合承载，但只在本路由出页 —— /posts/<id> 不再为专栏章节生成，
+ * 避免同一内容两个 URL。
+ */
+export async function getStaticPaths() {
+  const bundle = await getSeriesBundle('claudecode');
+  if (!bundle) return [];
+
+  return bundle.chapters.map(({ post, order }) => ({
+    params: { slug: post.id.replace(`${post.data.series}-`, '') },
+    props: {
+      entry: post,
+      order,
+      group: post.data.seriesGroup as string,
+      prev: neighborsOf(bundle, post.id).prev,
+      next: neighborsOf(bundle, post.id).next,
+    },
+  }));
+}
+
+interface Props {
+  entry: PostEntry;
+  order: number;
+  group: string;
+  prev?: PostEntry;
+  next?: PostEntry;
+}
+
+const { entry, order, group, prev, next } = Astro.props;
+const bundle = await getSeriesBundle('claudecode');
+if (!bundle) throw new Error('专栏 claudecode 未在 src/series.ts 登记');
+
+// 章节列表与文章列表共用同一份查询，避免"列表可见、详情缺失"的不一致
+const published = await listPosts();
+if (!published.some((post) => post.id === entry.id)) {
+  throw new Error(`章节 ${entry.id} 不在已发布列表中（草稿状态？）`);
+}
+
+const { Content } = await render(entry);
+---
+
+<SeriesChapterLayout entry={entry} series={bundle.series} group={group} order={order} prev={prev} next={next}>
+  <Content />
+</SeriesChapterLayout>

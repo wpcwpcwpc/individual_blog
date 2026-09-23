@@ -1,0 +1,124 @@
+name: 部署到 GitHub Pages
+
+# 站点前缀自动推导：<用户>.github.io 仓库用根路径，其它仓库用 /<仓库名>/
+# （站点本身支持两种托管，源码里不写死任何域名）
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      # 前缀优先级：仓库变量（绑自定义域名时用）> 从仓库名推导
+      # 绑域名后 Pages 会把站点改到域名根路径，此时必须把 BASE_PATH 覆盖为 /
+      - name: 推导 BASE_PATH 与 SITE_URL
+        env:
+          OVERRIDE_SITE_URL: ${{ vars.SITE_URL }}
+          OVERRIDE_BASE_PATH: ${{ vars.BASE_PATH }}
+        run: |
+          if [ -n "$OVERRIDE_SITE_URL" ] && [ -n "$OVERRIDE_BASE_PATH" ]; then
+            echo "BASE_PATH=$OVERRIDE_BASE_PATH" >> "$GITHUB_ENV"
+            echo "SITE_URL=$OVERRIDE_SITE_URL" >> "$GITHUB_ENV"
+            echo "用仓库变量覆盖：SITE_URL=$OVERRIDE_SITE_URL BASE_PATH=$OVERRIDE_BASE_PATH"
+          elif [ "${{ github.event.repository.name }}" = "${{ github.repository_owner }}.github.io" ]; then
+            echo "BASE_PATH=/" >> "$GITHUB_ENV"
+            echo "SITE_URL=https://${{ github.repository_owner }}.github.io" >> "$GITHUB_ENV"
+          else
+            echo "BASE_PATH=/${{ github.event.repository.name }}/" >> "$GITHUB_ENV"
+            echo "SITE_URL=https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}" >> "$GITHUB_ENV"
+          fi
+
+      - run: npm ci --no-audit --no-fund
+
+      # 词表不在仓库里（公开仓库不登记内部标识），只能来自仓库级 secret / variable。
+      # 兼容 vars 只为兜住"放错页签"的手滑 —— vars 不打码，所以下面逐行 add-mask 补上。
+      - name: 词表配置自检
+        env:
+          GLOSSARY_WORDS: ${{ secrets.GLOSSARY_WORDS || vars.GLOSSARY_WORDS }}
+        run: |
+          printf '%s' "$GLOSSARY_WORDS" | tr -d '\r' | while IFS= read -r line; do
+            if [ -n "$line" ]; then echo "::add-mask::$line"; fi
+          done
+
+          if [ -z "$GLOSSARY_WORDS" ]; then
+            echo "::error::未取到词表：secrets 与 vars 都是空。%0A1) 名字必须正好是 GLOSSARY_WORDS（无前后空格）%0A2) 放 Repository secrets / Repository variables，别放 Environments —— build job 未绑定环境，看不到环境级密钥%0A3) 内容整份粘贴 GLOSSARY.local.md，需含「## 二、禁出词表」标题"
+            exit 1
+          fi
+          if ! printf '%s' "$GLOSSARY_WORDS" | grep -q '^## 二、禁出词表'; then
+            echo "::error::GLOSSARY_WORDS 已注入，但缺少「## 二、禁出词表」锚点，解析会得到空词表（需整份粘贴 GLOSSARY.local.md）"
+            exit 1
+          fi
+          echo "词表已注入：$(printf '%s' "$GLOSSARY_WORDS" | wc -c) 字节，锚点可解析"
+
+      # 闸门失败原因送进 Annotations：`::error::` 之外只有一句裸的 exit code 1，
+      # 面板里看不出是哪道闸、为什么拦。
+      - name: 脱敏扫描
+        env:
+          GLOSSARY_WORDS: ${{ secrets.GLOSSARY_WORDS || vars.GLOSSARY_WORDS }}
+        run: 'npm run sanitize || { echo "::error::脱敏扫描失败——命中禁出词，或词表取不到。命中位置（已打码）见本步骤日志"; exit 1; }'
+
+      - name: 口径校验
+        run: 'npm run figures || { echo "::error::口径校验失败——页面数字与 GLOSSARY.md 第三节不一致，或 GLOSSARY.md 被删（它是口径单一来源，不能删）。逐项对照见本步骤日志"; exit 1; }'
+
+      - name: PDF 审计
+        env:
+          GLOSSARY_WORDS: ${{ secrets.GLOSSARY_WORDS || vars.GLOSSARY_WORDS }}
+        run: 'npm run pdf-audit || { echo "::error::PDF 审计失败——待发布 PDF 命中敏感内容。本地跑 node scripts/check-pdf.mjs --dump 人工通读"; exit 1; }'
+
+      # 简历两份内容源（站点侧 profile.ts / 投递用 PDF）的一致性：站点侧事实必须在 PDF 里都能找到
+      - name: 简历一致性
+        run: 'npm run resume-sync || { echo "::error::简历双源不一致——站点侧事实在 resume.pdf 中找不到。本地跑 node scripts/check-resume-sync.mjs --dump 看抽出了哪些事实"; exit 1; }'
+
+      - name: 图表生成
+        run: npm run diagrams
+
+      - name: deck 生成
+        run: npm run deck
+
+      - name: OG 生成
+        run: npm run og
+
+      - name: 静态构建
+        run: npx astro build
+
+      - name: 链接检查
+        run: 'npm run check || { echo "::error::链接检查失败——死链、旧域残留、或根绝对路径没带托管前缀。逐条列表见本步骤日志"; exit 1; }'
+
+      # artifact 部署本不跑 Jekyll，这一步是防止将来切到"分支部署"时 _astro/ 被忽略
+      - run: touch dist/.nojekyll
+
+      # 说明：PDF 由本机 Chromium 生成，CI 上缺浏览器会跳过（脚本自己降级、不报错）；
+      # 仓库里已提交的 public/pdf/*.pdf 会随 dist 一起发布，入口不会缺。
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

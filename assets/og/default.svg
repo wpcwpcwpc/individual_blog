@@ -1,0 +1,37 @@
+<!-- OG 分享图源（1200x630）。由 scripts/build-og.mjs 替换占位文本后栅格化为 public/og/default.png。
+     注意：本文件是构建输入，不属于发布产物，故放在 assets/ 而非 public/。 -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#ffffff" />
+  <rect x="0" y="0" width="1200" height="14" fill="hsl(221 83% 53%)" />
+
+  <g fill="hsl(221 83% 53%)" opacity="0.14">
+    <circle cx="1040" cy="120" r="150" />
+  </g>
+
+  <text
+    x="88"
+    y="268"
+    font-family="Microsoft YaHei, PingFang SC, Noto Sans SC, sans-serif"
+    font-size="72"
+    font-weight="700"
+    fill="hsl(222 22% 16%)"
+  >NAME_TITLE</text>
+
+  <text
+    x="88"
+    y="348"
+    font-family="Microsoft YaHei, PingFang SC, Noto Sans SC, sans-serif"
+    font-size="34"
+    fill="hsl(220 12% 42%)"
+  >TAGLINE_TEXT</text>
+
+  <rect x="88" y="420" width="96" height="6" rx="3" fill="hsl(221 83% 53%)" />
+
+  <text
+    x="88"
+    y="500"
+    font-family="Microsoft YaHei, PingFang SC, Noto Sans SC, sans-serif"
+    font-size="28"
+    fill="hsl(220 10% 56%)"
+  >SITE_URL_TEXT</text>
+</svg>

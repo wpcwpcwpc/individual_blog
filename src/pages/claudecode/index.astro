@@ -1,0 +1,124 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { withBase } from '../../utils/base';
+import { getSeriesBundle } from '../../utils/content';
+
+const bundle = await getSeriesBundle('claudecode');
+if (!bundle) throw new Error('专栏 claudecode 未在 src/series.ts 登记');
+
+const { series, groups, chapters } = bundle;
+const chapterUrl = (id: string) => withBase(`/claudecode/${id.replace(`${series.id}-`, '')}`);
+---
+
+<BaseLayout title={series.title} description={series.description}>
+  <section class="head shell">
+    <h1>{series.title}</h1>
+    <p class="head__desc">{series.description}</p>
+    <p class="head__meta">共 {chapters.length} 章 · 按章节顺序阅读，也可跳读任一主题</p>
+  </section>
+
+  {
+    groups.map((group) => (
+      <section class="group shell">
+        <h2>{group.name}</h2>
+        <p class="group__note">{group.note}</p>
+        <ul class="chapters">
+          {group.chapters.map(({ post, order }) => (
+            <li>
+              <a href={chapterUrl(post.id)}>
+                <span class="chapters__order">{String(order).padStart(2, '0')}</span>
+                <span class="chapters__title">{post.data.title}</span>
+              </a>
+              <span class="chapters__meta">
+                {post.data.readingMinutes && <span>{post.data.readingMinutes} 分钟</span>}
+                {post.data.weight && <span>{'⭐'.repeat(post.data.weight)}</span>}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </section>
+    ))
+  }
+</BaseLayout>
+
+<style>
+  .shell {
+    max-width: var(--container);
+    margin-inline: auto;
+    padding-inline: var(--space-4);
+  }
+
+  .head {
+    padding-block: var(--space-5) var(--space-4);
+  }
+
+  .head h1 {
+    margin: 0;
+    font-size: clamp(26px, 3vw + 14px, 40px);
+    line-height: 1.2;
+  }
+
+  .head__desc {
+    max-width: var(--measure);
+    margin: var(--space-3) 0 0;
+    color: var(--color-text-muted);
+  }
+
+  .head__meta {
+    margin: var(--space-3) 0 0;
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+  }
+
+  .group {
+    padding-block: var(--space-5);
+    border-top: 1px solid var(--color-border);
+  }
+
+  .group h2 {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+  }
+
+  .group__note {
+    margin: var(--space-2) 0 var(--space-4);
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+  }
+
+  .chapters {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-width: var(--measure);
+  }
+
+  .chapters li {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-3);
+    align-items: baseline;
+    padding-block: var(--space-3);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .chapters a {
+    display: flex;
+    gap: var(--space-3);
+    text-decoration: none;
+  }
+
+  .chapters__order {
+    color: var(--color-text-faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .chapters__meta {
+    display: flex;
+    gap: var(--space-2);
+    margin-left: auto;
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+  }
+</style>

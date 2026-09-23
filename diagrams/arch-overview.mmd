@@ -1,0 +1,31 @@
+%% @desc 平台五层架构总览：交互 → 编排 → 专职Agent → 能力 → 支撑
+%% 复用位置：项目页主图 / deck 第 3 页 / PDF
+flowchart LR
+    subgraph L1[交互层]
+        U1[Web控制台]
+        U2[REST与流式接口]
+        U3[会话与鉴权]
+    end
+    subgraph L2[编排层]
+        O1[意图路由]
+        O2[协调者]
+        O3[工作池]
+    end
+    subgraph L3[Agent层]
+        A1[专职Agent定义]
+        A2[工具装配]
+        A3[Hook挂载]
+    end
+    subgraph L4[能力层]
+        C1[工具注册表]
+        C2[双向能力桥]
+        C3[技能库]
+        C4[记忆与知识]
+    end
+    subgraph L5[支撑层]
+        S1[可观测]
+        S2[闸门与沙箱]
+        S3[持久化]
+        S4[评测体系]
+    end
+    L1 --> L2 --> L3 --> L4 --> L5

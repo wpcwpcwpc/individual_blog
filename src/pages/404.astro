@@ -1,0 +1,35 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { withBase } from '../utils/base';
+---
+
+<BaseLayout title="页面不存在" description="请求的页面不存在">
+  <div class="notfound">
+    <p class="notfound__code">404</p>
+    <p class="notfound__text">这个地址下没有内容，可能是链接过期或拼写有误。</p>
+    <p><a href={withBase('/')}>回到首页</a></p>
+  </div>
+</BaseLayout>
+
+<style>
+  .notfound {
+    max-width: var(--measure);
+    margin-inline: auto;
+    text-align: center;
+    padding-block: var(--space-6);
+  }
+
+  .notfound__code {
+    margin: 0;
+    font-size: clamp(40px, 6vw, 72px);
+    font-weight: 700;
+    color: var(--color-accent);
+    line-height: 1;
+  }
+
+  .notfound__text {
+    margin: var(--space-4) 0;
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+  }
+</style>

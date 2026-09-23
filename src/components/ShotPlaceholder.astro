@@ -1,0 +1,73 @@
+---
+interface Props {
+  /** 占位标题，说明这里将来放什么界面 */
+  title: string;
+  /** 取景建议：拍什么、包含哪些元素、注意什么 */
+  hint?: string;
+  /** 清单编号，对应 SHOTS.md 中的条目 */
+  id?: string;
+}
+
+const { title, hint, id } = Astro.props;
+---
+
+<figure class="shot">
+  <div class="shot__frame" role="img" aria-label={`截图占位：${title}`}>
+    <span class="shot__badge">{id ? `截图占位 ${id}` : '截图占位'}</span>
+    <p class="shot__title">{title}</p>
+    {hint && <p class="shot__hint">{hint}</p>}
+  </div>
+  <figcaption class="shot__foot">
+    待本人脱敏后覆盖 · 取景与脱敏注意见仓库 SHOTS.md
+  </figcaption>
+</figure>
+
+<style>
+  .shot {
+    margin: 0;
+  }
+
+  /* 刻意设计的统一占位视觉：不留空白、不出现破图 */
+  .shot__frame {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: var(--space-5) var(--space-4);
+    border: 2px dashed var(--color-border-strong);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    color: var(--color-text-muted);
+  }
+
+  .shot__badge {
+    font-size: var(--text-xs);
+    letter-spacing: 0.04em;
+    padding: 0.15em 0.6em;
+    border-radius: 999px;
+    background: var(--color-accent-soft);
+    color: var(--color-accent-strong);
+  }
+
+  .shot__title {
+    margin: 0;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .shot__hint {
+    margin: 0;
+    font-size: var(--text-xs);
+    max-width: 46ch;
+  }
+
+  .shot__foot {
+    margin-top: var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+    text-align: center;
+  }
+</style>
