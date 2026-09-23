@@ -25,6 +25,8 @@ const projects = defineCollection({
     tags: z.array(z.string()).default([]),
     draft: z.boolean().default(false),
     updated: z.coerce.date().optional(),
+    /** 在线演示地址：站外绝对 URL，不走 withBase 前缀管线 */
+    demoUrl: z.string().url().optional(),
     figures: z.array(figure).default([]),
   }),
 });

@@ -12,7 +12,7 @@ interface Props {
 }
 
 const { entry } = Astro.props;
-const { title, tagline, summary, tags, updated, figures } = entry.data;
+const { title, tagline, summary, tags, updated, figures, demoUrl } = entry.data;
 
 // PDF 是兜底产物（由 npm run pdf 生成），deck 是扫读版（由 deck 构建脚本生成）。
 // 两者都是"锦上添花"：产物存在才出入口，否则显示待补齐状态——不出现死链，也不阻塞发布。
@@ -44,6 +44,13 @@ const hasDeck = existsSync(projectPath('public', 'deck', entry.id, 'index.html')
         )
       }
       <p class="project__actions">
+        {
+          demoUrl && (
+            <a class="project__action" href={demoUrl} target="_blank" rel="noopener">
+              在线演示 ↗
+            </a>
+          )
+        }
         {
           hasPdf ? (
             <a class="project__action" href={withBase(`/pdf/${entry.id}.pdf`)} download>

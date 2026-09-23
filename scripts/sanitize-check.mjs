@@ -26,7 +26,15 @@ const REVEAL = process.env.SANITIZE_REVEAL === '1';
 const maskToken = (token) => (REVEAL ? token : `${token.slice(0, 2)}***（${token.length} 字符）`);
 
 /** 硬跳过：词表与处置清单自身就是内部标识的集合，扫它们会让构建永远失败 */
-const IGNORE = ['GLOSSARY.local.md', 'SANITIZE-LIST.local.md'];
+const IGNORE = [
+  'GLOSSARY.local.md',
+  'SANITIZE-LIST.local.md',
+  // 源码搬运台账：通篇真实模块路径与内网信息，本身就是"内部模块地图"。
+  // 按 add-qa-agent-source 自己的规格（source-sanitization：含真实文件名的处置清单只存在于本地隔离文件），
+  // 它 MUST NOT 入库 —— 与上面两份清单同构，故同样不进扫描面。
+  // 注意：文件名保持不变（openspec CLI 靠 tasks.md 追踪任务），隔离靠 .gitignore + 此处双保险。
+  'openspec/changes/add-qa-agent-source/tasks.md',
+];
 
 /**
  * 源码镜像区（`mirror/`）的扫描面与排除规则。
@@ -104,7 +112,10 @@ const scanRoots = [
  * 豁免不等于不检查：命中仍然打印告警，让"哪些内部标识被公开了"始终可见，只是不拦构建。
  */
 const EXEMPT = [
-  { path: 'src/pages/resume.astro', reason: '简历页：当前仅承载 PDF 容器，无履历文本；保留豁免以防文本回归（见 RESUME.md）' },
+  {
+    path: 'src/pages/resume/pdf.astro',
+    reason: '简历 PDF 查看器：只承载 PDF 容器，无履历文本；保留豁免以防文本回归（见 RESUME.md）',
+  },
 ];
 
 function exemptionFor(filePath) {

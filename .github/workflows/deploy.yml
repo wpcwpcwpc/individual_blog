@@ -83,6 +83,10 @@ jobs:
           GLOSSARY_WORDS: ${{ secrets.GLOSSARY_WORDS || vars.GLOSSARY_WORDS }}
         run: 'npm run pdf-audit || { echo "::error::PDF 审计失败——待发布 PDF 命中敏感内容。本地跑 node scripts/check-pdf.mjs --dump 人工通读"; exit 1; }'
 
+      # 简历两份内容源（站点侧 profile.ts / 投递用 PDF）的一致性：站点侧事实必须在 PDF 里都能找到
+      - name: 简历一致性
+        run: 'npm run resume-sync || { echo "::error::简历双源不一致——站点侧事实在 resume.pdf 中找不到。本地跑 node scripts/check-resume-sync.mjs --dump 看抽出了哪些事实"; exit 1; }'
+
       - name: 图表生成
         run: npm run diagrams
 

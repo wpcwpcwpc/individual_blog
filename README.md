@@ -1,9 +1,12 @@
 # personal-site
 
-个人技术门面站点：项目展示 + 技术写作。静态构建、零后端、零追踪。
+个人技术门面站点，主用途是**求职门面**：进站先看到"这人是谁、会什么、在哪个方向、怎么联系"，
+其后才是项目页与技术文章（它们是支撑证据，不是主角）。静态构建、零后端、零追踪。
 
 - 技术栈：Astro（内容集合驱动）、Mermaid（构建期渲成 SVG）、Cloudflare Pages（托管）
 - 内容：Markdown 存于版本库，新增内容 = 加一个文件
+- 身份与履历：结构化数据存于 `src/data/profile.ts`，首页身份区 / 技术栈 / 关于页 / 简历文本页共用同一份真源
+- 简历双形态：`/resume` 文本页（可复制、可被检索）+ `/resume/pdf` 原件查看器，一致性由 `npm run resume-sync` 兜住
 - 脱敏：构建前置扫描，命中禁出词即构建失败（详见 `GLOSSARY.md`）
 
 ## 快速开始
@@ -26,11 +29,12 @@ npm run dev          # 本地预览 http://localhost:4321
 | `npm run import:series` | 外部长文导入为专栏章节（`-- --src <目录> [--skip-internal]`，详见 `SERIES.md`） |
 | `npm run diagrams` | `diagrams/*.mmd` → `src/assets/diagrams/*.svg` |
 | `npm run og` | 生成 OG 分享图 `public/og/default.png` |
-| `npm run build` | 脱敏 → 口径 → 专栏 → PDF 审计 → 图表 → deck → OG → 静态构建（任一步失败即中止） |
+| `npm run build` | 脱敏 → 口径 → 专栏 → PDF 审计 → 简历一致性 → 图表 → deck → OG → 静态构建（任一步失败即中止） |
 | `npm run diagrams` | `diagrams/*.mmd` → `src/assets/diagrams/*.svg`（站内与 deck 共用同一批产物） |
 | `npm run deck` | `deck/*` + 图表产物 → `public/deck/qa-agent/index.html`（自包含单文件，失败只告警） |
 | `npm run pdf` | 用本机 Chromium 把项目页打印为 PDF（兜底产物，失败不阻塞） |
 | `npm run pdf-audit` | 审计 `public/` 下所有待发布 PDF（PII + 禁出词）；加 `--dump` 可打印全文供人工通读 |
+| `npm run resume-sync` | 简历双源校验：`profile.ts` 抽出的事实必须在 `resume.pdf` 里都能找到；加 `--dump` 打印事实清单 |
 | `npm run check` | 链接与资源健康检查（无死链才通过） |
 | `npm run mobile` | 用 CDP 强制 390px 真视口核对（`-- /projects/qa-agent --h 2400 --out _m.png`） |
 | `npm run deploy` | 构建 → PDF → 再构建 → 检查 → 部署到 Cloudflare Pages |
@@ -45,9 +49,11 @@ src/
     posts/*.md         文章（/posts/<文件名>）；专栏章节也在其中，命名 claudecode-<NN>-<english>
   content.config.ts    内容集合与 frontmatter 校验
   series.ts            专栏登记表（标题 / 描述 / 分区顺序的唯一真源）
+  data/profile.ts      身份 / 方向 / 技术栈 / 经历 / 教育 / 联系方式（首页与简历的共同真源）
   layouts/             站点骨架、项目页、文章页、专栏章节页布局
   components/          Prose（长文排版）、Mermaid（图表）、ShotPlaceholder（截图占位）
-  pages/               首页、关于、文章列表、文章/章节详情、项目页、404、robots
+  pages/               首页、关于、文章列表、文章/章节详情、项目页、简历（resume/index 文本页、
+                       resume/pdf 原件查看器）、404、robots
   plugins/             rehype-diagram：把 ![x](diagram:名) 就地换成内联 SVG；
                        rehype-base-links：给内容里的站内绝对链接补托管前缀（子路径托管不 404）
   styles/              theme.css（设计令牌）、typography.css（排版规范）
@@ -64,8 +70,10 @@ public/                favicon、OG 产物、PDF 产物、deck 产物、简历 P
 
 | 路径 | 用途 | 稳定性 |
 |---|---|---|
-| `/` | 首页 | 稳定 |
+| `/` | 首页（身份区 → 技术栈 → 精选项目 → 其他项目 → 文章 → 联系） | 稳定 |
 | `/about` | 关于 | 稳定 |
+| `/resume` | 简历文本页——**对外引用的简历入口** | **永不变更** |
+| `/resume/pdf` | 简历 PDF 原件查看器（投递与打印形态的下载入口） | **永不变更** |
 | `/projects/<slug>` | 项目页——**对外引用（简历等）指向此处** | **永不变更** |
 | `/posts/<slug>` | 单篇文章（不含专栏章节） | 发布后不变更 |
 | `/posts` | 文章列表（专栏卡片 + 单篇分页） | 稳定 |
@@ -135,6 +143,8 @@ frontmatter 另带 `series` / `seriesOrder` / `seriesGroup`（必须命中 `src/
 - `npm run figures` 校验页面数字与登记表述逐字一致；两处不一致即失败，数字打架进不了线上
 - `npm run pdf-audit` 把 `public/` 下的 PDF 抽成文本再跑同一套词表（PDF 是文本闸门扫不到的盲区），
   并叠加 PII 模式（手机号 / 身份证 / 固话）
+- `npm run resume-sync` 校验简历两份内容源一致：站点侧事实（雇主、学校、学位、时间区间、指标精确值、邮箱）
+  必须都能在 `public/resume/resume.pdf` 里找到，缺一条即失败；方向是单向包含，PDF 多出的内容不报错
 - 发布前按 `RELEASE-CHECKLIST.md` 逐条自检，终审结论记入该文件
 - 截图占位状态在 `SHOTS.md` 跟踪；简历上站清单在 `RESUME.md`；专栏导入边界与维护在 `SERIES.md`
 

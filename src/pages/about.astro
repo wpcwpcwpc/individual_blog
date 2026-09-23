@@ -4,6 +4,7 @@ import Prose from '../components/Prose.astro';
 import Mermaid from '../components/Mermaid.astro';
 import { withBase } from '../utils/base';
 import { SITE } from '../site.config';
+import { directions, identity } from '../data/profile';
 ---
 
 <BaseLayout title="关于" description={`关于 ${SITE.author}`}>
@@ -13,10 +14,17 @@ import { SITE } from '../site.config';
   </div>
 
   <Prose>
+    {identity.intro.map((line) => <p>{line}</p>)}
+
     <p>
-      我是{SITE.author}，做游戏 QA 方向的工程研发：多 Agent 编排、Agent 工具的工程化封装、
-      评测体系与全链路可观测。这里写两样东西——项目页讲做法与取舍，文章讲踩过的坑与判断依据。
+      这里写两样东西——项目页讲做法与取舍，文章讲踩过的坑与判断依据；
+      身份、能力与经历以 <a href={withBase('/resume')}>简历页</a> 为准，站内不另抄一份。
     </p>
+
+    <h2>方向</h2>
+    <ul class="chips">
+      {directions.map((direction) => <li>{direction}</li>)}
+    </ul>
 
     <h2>这个站点</h2>
     <ul>
@@ -32,7 +40,10 @@ import { SITE } from '../site.config';
     <h2 id="resume">简历</h2>
     <ul>
       <li>
-        <a href={withBase('/resume')}>简历页</a>（整页展示 PDF 原文，可用浏览器直接阅读或下载）
+        <a href={withBase('/resume')}>简历文本版</a>（可选中、可复制、可被搜索与招聘系统读取）
+      </li>
+      <li>
+        <a href={withBase('/resume/pdf')}>简历 PDF</a>（原件形态，适合下载、打印与邮件投递）
       </li>
       <li>站点本身也是一份简历：项目页讲做法与取舍，文章讲踩过的坑与判断依据</li>
     </ul>
@@ -61,5 +72,11 @@ import { SITE } from '../site.config';
     margin: var(--space-2) 0 0;
     font-size: var(--text-sm);
     color: var(--color-text-muted);
+  }
+
+  /* 方向标签用的是全局 .chips；Prose 里列表默认为长文样式，这里复位成紧凑横排 */
+  .chips {
+    margin: 0;
+    padding: 0;
   }
 </style>

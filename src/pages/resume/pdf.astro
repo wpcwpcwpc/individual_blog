@@ -1,10 +1,11 @@
 ---
 import { existsSync } from 'node:fs';
-import { withBase } from '../utils/base';
-import { projectPath } from '../utils/paths.mjs';
-import { SITE } from '../site.config';
+import { withBase } from '../../utils/base';
+import { projectPath } from '../../utils/paths.mjs';
+import { SITE } from '../../site.config';
 
-// 简历页只做一件事：整页渲染 PDF 原文。不套站点导航与页脚，避免任何额外元素干扰阅读。
+// 简历 PDF 形态：整页渲染 PDF 原文。裸文档、不套站点导航与页脚，避免任何额外元素干扰阅读。
+// 阅读形态在 /resume（文本页，可复制、可被检索）；这里负责原件与投递场景。
 // 渲染走 pdf.js：桌面与移动端都能内联翻页（iOS Safari 等不内联 PDF 的内核同样可用）。
 const hasPdf = existsSync(projectPath('public', 'resume', 'resume.pdf'));
 const pdfUrl = hasPdf ? withBase('/resume/resume.pdf') : '';
@@ -16,8 +17,8 @@ const favicon = withBase('/favicon.svg');
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>简历 · {SITE.author}</title>
-    <meta name="description" content={`${SITE.author} 的简历`} />
+    <title>简历 PDF · {SITE.author}</title>
+    <meta name="description" content={`${SITE.author} 的简历 PDF 原件`} />
     <link rel="icon" type="image/svg+xml" href={favicon} />
     <!-- 独立文档、无布局套壳，样式全局生效：canvas 由 JS 创建，作用域样式选不中它 -->
     <style is:global>
@@ -27,6 +28,31 @@ const favicon = withBase('/favicon.svg');
         min-height: 100%;
         background: #525659; /* PDF 阅读器同款底色 */
         -webkit-text-size-adjust: 100%;
+      }
+
+      .bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.75rem;
+        max-width: 52rem;
+        margin: 0 auto;
+        padding: 0.75rem 0.75rem 0;
+        font: 400 14px/1.6 system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+      }
+
+      .bar a {
+        color: #e8e8e8;
+        text-decoration: none;
+        border-bottom: 1px solid rgb(232 232 232 / 40%);
+      }
+
+      .bar a:hover {
+        border-bottom-color: #e8e8e8;
+      }
+
+      .bar__spacer {
+        margin-left: auto;
       }
 
       .track {
@@ -75,6 +101,17 @@ const favicon = withBase('/favicon.svg');
     </style>
   </head>
   <body>
+    <div class="bar">
+      <a href={withBase('/resume')}>← 返回文本版</a>
+      {
+        hasPdf && (
+          <a class="bar__spacer" href={pdfUrl} download>
+            下载 PDF 原件
+          </a>
+        )
+      }
+    </div>
+
     {
       hasPdf ? (
         <div id="resume-viewer" data-src={pdfUrl} data-author={SITE.author}>
@@ -83,7 +120,9 @@ const favicon = withBase('/favicon.svg');
           </div>
         </div>
       ) : (
-        <p class="missing">简历文件暂不可用。</p>
+        <p class="missing">
+          简历文件暂不可用。<a href={withBase('/resume')}>看文本版 →</a>
+        </p>
       )
     }
 

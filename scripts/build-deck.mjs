@@ -85,7 +85,7 @@ async function renderSlide(slide, index, context) {
         '<ul class="points">',
         `<li>项目页：<a href="${base}/projects/${DECK_SLUG}">${escapeHtml(context.site.name)}的项目页</a>（取舍与难点）</li>`,
         `<li>深挖文章：<a href="${base}/posts/multi-agent-vs-one-agent">多 Agent 拆分</a> · <a href="${base}/posts/spec-driven-agent-evolution">规格驱动</a> · <a href="${base}/posts/three-guardrails">三道闸门</a></li>`,
-        `<li>简历：<a href="${base}/about#resume">关于页 · 简历</a></li>`,
+        `<li>简历：<a href="${base}/resume">简历页</a></li>`,
         `<li>邮箱：<a href="mailto:${escapeHtml(context.site.email)}">${escapeHtml(context.site.email)}</a> · GitHub：<a href="${context.site.github}" rel="noopener">${escapeHtml(context.site.github.replace(/^https?:\/\//, ''))}</a></li>`,
         '</ul>',
       ].join('\n'),

@@ -1,12 +1,16 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import { SITE } from '../site.config';
+import { directions, identity, stacks } from '../data/profile';
 import { withBase } from '../utils/base';
 import { listProjects, listSeriesBundles, listStandalonePosts } from '../utils/content';
 
 const projects = await listProjects();
 const featured = projects.filter((p) => p.data.featured);
 const rest = projects.filter((p) => !p.data.featured);
+
+// 入口指向"最能说明问题"的那一页：有精选项目就进精选，否则退到第一个项目
+const entryProject = featured[0] ?? projects[0];
 
 // 首页是门面不是索引：专栏只出入口卡片，单篇只出最近几篇，全量在 /posts
 const series = await listSeriesBundles();
@@ -16,7 +20,39 @@ const recentPosts = (await listStandalonePosts()).slice(0, 5);
 <BaseLayout>
   <section class="hero shell">
     <h1>{SITE.name}</h1>
-    <p class="hero__tagline">{SITE.tagline}</p>
+    <p class="hero__tagline">{identity.headline}</p>
+    <div class="hero__intro lede">
+      {identity.intro.map((line) => <p>{line}</p>)}
+    </div>
+    <p class="hero__meta">{identity.experience} · {identity.location}</p>
+    <ul class="chips">
+      {directions.map((direction) => <li>{direction}</li>)}
+    </ul>
+    <p class="hero__actions actions">
+      <a href={withBase('/resume')}>看简历</a>
+      {entryProject && <a href={withBase(`/projects/${entryProject.id}`)}>看项目</a>}
+      <a href={`mailto:${SITE.email}`}>邮件联系</a>
+    </p>
+  </section>
+
+  <section class="section shell">
+    <h2>技术栈</h2>
+    <dl class="stack">
+      {
+        stacks.map((group) => (
+          <div class="stack__row">
+            <dt>{group.name}</dt>
+            <dd>
+              <ul class="stack__items">
+                {group.items.map((item) => (
+                  <li>{item}</li>
+                ))}
+              </ul>
+            </dd>
+          </div>
+        ))
+      }
+    </dl>
   </section>
 
   <section class="section shell">
@@ -96,6 +132,26 @@ const recentPosts = (await listStandalonePosts()).slice(0, 5);
       <a href={withBase('/posts')}>全部文章 →</a>
     </p>
   </section>
+
+  <section class="section shell" id="contact">
+    <h2>联系</h2>
+    <ul class="plain contact">
+      <li>
+        <span class="contact__label">邮箱</span>
+        <a href={`mailto:${SITE.email}`}>{SITE.email}</a>
+      </li>
+      <li>
+        <span class="contact__label">代码托管</span>
+        <a href={SITE.github} rel="me noopener">{SITE.github}</a>
+      </li>
+      <li>
+        <span class="contact__label">简历</span>
+        <a href={withBase('/resume')}>文本版</a>
+        <span class="plain__desc">·</span>
+        <a href={withBase('/resume/pdf')}>PDF 版</a>
+      </li>
+    </ul>
+  </section>
 </BaseLayout>
 
 <style>
@@ -121,6 +177,12 @@ const recentPosts = (await listStandalonePosts()).slice(0, 5);
     max-width: var(--measure);
     font-size: var(--text-base);
     color: var(--color-text-muted);
+  }
+
+  .hero__meta {
+    margin: var(--space-3) 0 0;
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
   }
 
   .section {
@@ -214,6 +276,13 @@ const recentPosts = (await listStandalonePosts()).slice(0, 5);
 
   .plain__date {
     margin-left: auto;
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+  }
+
+  /* 联系区：标签定宽，值左对齐成列，长 URL 不与标签挤在一起 */
+  .contact__label {
+    min-width: 5rem;
     font-size: var(--text-xs);
     color: var(--color-text-faint);
   }

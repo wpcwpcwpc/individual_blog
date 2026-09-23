@@ -24,6 +24,11 @@ GLOSSARY.local.md
 # 模板与用法见 openspec/changes/add-qa-agent-source/design.md D6
 SANITIZE-LIST.local.md
 
+# 源码搬运台账（add-qa-agent-source 的 tasks.md）：同属"含真实文件名的处置清单"，
+# 按其规格 source-sanitization 的要求只留在本地；文件名不变是为了 openspec CLI 仍能追踪任务。
+# 扫描器侧同步列入 scripts/sanitize-check.mjs 的 IGNORE（双保险：忽略条目丢失时仍不会被扫）
+openspec/changes/add-qa-agent-source/tasks.md
+
 # 源码镜像区（mirror/）：已于 9/20 迁出至独立仓库维护
 # （作者拍板「移出，新库成唯一真源」，见 openspec/changes/add-qa-agent-source/tasks.md 10.1）。
 # 本仓库不再保留副本；忽略条目予以恢复，防止将来误把游离副本提交进本站仓库。
