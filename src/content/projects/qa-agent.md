@@ -4,7 +4,7 @@ tagline: 把一句自然语言任务交给一群专职 Agent，从用例生成�
 summary: 一个用工程方法管住演化过程的多 Agent 编排平台：面向游戏 QA 的环境管理、客户端调试与版本回归，四步流水线、双向能力桥接、三道管控闸门、可观测与评测闭环。
 order: 1
 featured: true
-demoUrl: https://tactics-autism-rockstar.ngrok-free.dev/
+demoUrl: https://agentos.free.idcfengye.com/
 tags:
   - 多 Agent
   - 编排
