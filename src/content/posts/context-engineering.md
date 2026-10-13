@@ -69,4 +69,6 @@ tags:
 
 上下文怎么装只是基础，装进去的能力能不能用对，见
 [三道闸门：怎么让 Agent 不越权、不幻觉、不闯祸](/posts/three-guardrails)；
+这套机制在工程上怎么落地（四层防御、压缩与缓存的账、五个坑），见
+[上下文压缩的四层防御：与业内 SOTA 的一次对账](/posts/context-compression-vs-sota)；
 系统整体设计见[项目页](/projects/qa-agent)。

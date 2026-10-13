@@ -175,13 +175,14 @@ Agent 层按定义装配工具与管控钩子，能力层提供工具、桥接�
 
 - **扫读版**：12 页概览 deck（本页顶部入口），3 分钟看完问题、方案与结果
 - **离线版**：本页 PDF（本页顶部入口），适合邮件附件与打印
-- **深挖文章**（七篇，每篇一个取舍）：
+- **深挖文章**（八篇，每篇一个取舍）：
   1. [为什么拆成多个专职 Agent，而不是把它们合成一个](/posts/multi-agent-vs-one-agent)
   2. [用规格驱动的流程，管住一个持续演化的多 Agent 系统](/posts/spec-driven-agent-evolution)
   3. [双向桥接的取舍：能力该常驻，还是按需拉起](/posts/bidirectional-bridge-tradeoffs)
   4. [三道闸门：怎么让 Agent 不越权、不幻觉、不闯祸](/posts/three-guardrails)
   5. [上下文工程：什么时候该压缩，什么时候绝不能压](/posts/context-engineering)
-  6. [让模型给人打分之前，先校准这把尺子](/posts/llm-as-judge-calibration)
-  7. [不报错的坑：Agent 系统里最难查的几类故障](/posts/silent-failure-modes)
+  6. [上下文压缩的四层防御：与业内 SOTA 的一次对账](/posts/context-compression-vs-sota)
+  7. [让模型给人打分之前，先校准这把尺子](/posts/llm-as-judge-calibration)
+  8. [不报错的坑：Agent 系统里最难查的几类故障](/posts/silent-failure-modes)
 
 想聊机制细节或看某一段的设计取舍，欢迎邮件联系（见[关于](/about)）。
