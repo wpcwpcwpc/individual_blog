@@ -138,9 +138,12 @@ hr {
   margin: var(--space-5) 0;
 }
 
-/* 表格：窄屏可横向滚动，不挤压内容 */
+/* 表格：窄屏横向滚动，不挤压内容。
+   关键在 width:max-content + max-width:100%——保持内容宽度，容器不够时表格自身滚动；
+   若只写 width:100%，浏览器会把列压到极窄（中文表头会变成一字一列）而不是滚动。 */
 table {
-  width: 100%;
+  width: max-content;
+  max-width: 100%;
   border-collapse: collapse;
   font-size: var(--text-xs);
   display: block;
